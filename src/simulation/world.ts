@@ -1,4 +1,5 @@
 import { clamp, createRng, round, type Rng } from "./rng";
+import { calculateCreatureFitness, climateMismatch, diseaseLethalityFor, predatorLethalityFor, pressureCostsFor } from "./pressure";
 import { averageGenome, buildSpeciesSummaries, dominantTrait, genomeKeys, speciesIdForGenome } from "./species";
 import type { Biome, Creature, GenerationSummary, Genome, MutationRecord, SimulationEvent, TerrainCell, World, WorldEvent, WorldOptions } from "./types";
 
@@ -116,7 +117,7 @@ export function stepWorld(input: World): World {
     const cell = getCell(world, creature.x, creature.y);
     feedCreature(creature, cell);
     applyStress(creature, cell, world.currentEvent);
-    creature.fitness = calculateFitness(creature, cell);
+    creature.fitness = calculateCreatureFitness(creature, cell);
 
     const deathCause = deathCauseFor(creature, cell, rng);
     if (deathCause) {
@@ -401,32 +402,14 @@ function feedCreature(creature: Creature, cell: TerrainCell): void {
 }
 
 function applyStress(creature: Creature, cell: TerrainCell, event?: WorldEvent): void {
-  const metabolicCost = 0.034 + creature.genome.metabolism * 0.045 + creature.genome.speed * 0.01;
-  const climateCost = climateMismatch(creature.genome, cell) * 0.038;
-  const diseaseCost = Math.max(0, cell.disease - creature.genome.immunity * 0.65) * 0.055;
-  const predatorCost = Math.max(0, cell.predatorPressure - creature.genome.predatorSense * 0.7 - creature.genome.aggression * 0.18) * 0.045;
-  const eventCost =
-    event?.kind === "ashfall"
-      ? event.severity * (0.035 - creature.genome.migrationDrive * 0.014)
-      : event?.kind === "drought"
-        ? event.severity * (0.028 - creature.genome.foraging * 0.01)
-        : 0;
-
-  creature.energy = round(creature.energy - metabolicCost - climateCost - diseaseCost - predatorCost - eventCost);
-}
-
-function climateMismatch(genome: Genome, cell: TerrainCell): number {
-  if (cell.temperature > 0.58) {
-    return Math.max(0, cell.temperature - genome.heatTolerance);
-  }
-  return Math.max(0, 1 - cell.temperature - genome.coldTolerance);
+  creature.energy = round(creature.energy - pressureCostsFor(creature, cell, event).total);
 }
 
 function deathCauseFor(creature: Creature, cell: TerrainCell, rng: Rng): string | undefined {
   if (creature.energy <= 0) return "starvation";
   if (creature.age > 70 + creature.genome.metabolism * 35 && rng.chance(0.35)) return "old age";
-  if (cell.disease > creature.genome.immunity + 0.24 && rng.chance((cell.disease - creature.genome.immunity) * 0.22)) return "disease";
-  if (cell.predatorPressure > creature.genome.predatorSense + creature.genome.aggression * 0.35 && rng.chance((cell.predatorPressure - creature.genome.predatorSense) * 0.18)) {
+  if (rng.chance(diseaseLethalityFor(creature, cell))) return "disease";
+  if (rng.chance(predatorLethalityFor(creature, cell))) {
     return "predation";
   }
   return undefined;
@@ -514,13 +497,6 @@ function mutate(genome: Genome, generation: number, rng: Rng): MutationRecord[] 
 function genomeDistance(left: Genome, right: Genome): number {
   const total = genomeKeys.reduce((sum, key) => sum + Math.abs(left[key] - right[key]), 0);
   return total / genomeKeys.length;
-}
-
-function calculateFitness(creature: Creature, cell: TerrainCell): number {
-  const youth = Math.max(0, 1 - creature.age / 95);
-  const survival = creature.energy * 0.5 + creature.births * 0.18 + youth * 0.1;
-  const adaptation = 1 - climateMismatch(creature.genome, cell) - cell.disease * (1 - creature.genome.immunity) * 0.25 - cell.predatorPressure * (1 - creature.genome.predatorSense) * 0.2;
-  return round(clamp(survival * 0.62 + adaptation * 0.38));
 }
 
 function getCell(world: World, x: number, y: number): TerrainCell {
