@@ -23,12 +23,41 @@ test("renders a nonblank living lab and captures a screenshot", async ({ page },
   await page.getByRole("button", { name: "Step" }).click();
   await expect(generationBadge).toHaveText("Generation 1");
 
-  const terrainTiles = await page.locator(".world-map rect").count();
-  const renderedCreatures = await page.locator(".world-map circle").count();
-  const lineageMarkers = await page.locator(".world-map .lineage-marker").count();
-  expect(terrainTiles).toBeGreaterThan(1_000);
-  expect(renderedCreatures).toBeGreaterThan(80);
-  expect(lineageMarkers).toBeGreaterThan(0);
+  const mapStats = await page.locator("canvas.world-map").evaluate((element) => {
+    const canvas = element as HTMLCanvasElement;
+    const context = canvas.getContext("2d");
+    const image = context?.getImageData(0, 0, canvas.width, canvas.height);
+    const swatches = new Set<string>();
+    let paintedPixels = 0;
+
+    if (image) {
+      const step = Math.max(4, Math.floor(image.data.length / 4 / 1_200) * 4);
+      for (let index = 0; index < image.data.length; index += step) {
+        const alpha = image.data[index + 3];
+        if (alpha > 0) {
+          paintedPixels += 1;
+          swatches.add(`${image.data[index]}-${image.data[index + 1]}-${image.data[index + 2]}`);
+        }
+      }
+    }
+
+    return {
+      width: canvas.width,
+      height: canvas.height,
+      terrainCells: Number(canvas.dataset.terrainCells),
+      renderedCreatures: Number(canvas.dataset.creaturesRendered),
+      selectedLineageCount: Number(canvas.dataset.selectedLineageCount),
+      svgMapNodes: document.querySelectorAll(".world-map rect, .world-map circle").length,
+      paintedPixels,
+      swatches: swatches.size
+    };
+  });
+  expect(mapStats.terrainCells).toBeGreaterThan(1_000);
+  expect(mapStats.renderedCreatures).toBeGreaterThan(80);
+  expect(mapStats.selectedLineageCount).toBeGreaterThan(0);
+  expect(mapStats.svgMapNodes).toBe(0);
+  expect(mapStats.paintedPixels).toBeGreaterThan(600);
+  expect(mapStats.swatches).toBeGreaterThan(8);
 
   const mapBox = await page.locator(".world-map").boundingBox();
   expect(mapBox?.width).toBeGreaterThan(600);

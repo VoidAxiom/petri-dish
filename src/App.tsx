@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import {
   createWorld,
   explainCreaturePressure,
@@ -9,14 +9,35 @@ import {
   type CreaturePressureReport,
   type Genome,
   type SimulationEvent,
+  type TerrainCell,
   type World
 } from "./simulation";
 
 const demoSeeds = ["mythic-lagoon-17", "glass-drought-41", "ember-reef-93"];
 const mapModes = ["terrain", "food", "disease", "predators", "temperature"] as const;
 const simulationTickMs = 420;
+const epochSteps = 50;
+const epochChunkSteps = 8;
+const biomeColors: Record<TerrainCell["biome"], string> = {
+  mire: "#166534",
+  steppe: "#5f6f32",
+  reef: "#0f766e",
+  fungal: "#7c3aed",
+  basalt: "#334155",
+  ice: "#7dd3fc"
+};
 
 type MapMode = (typeof mapModes)[number];
+type CanvasSize = { width: number; height: number };
+type CreatureRecord = { creature: Creature; status: "living" | "dead" };
+type TerrainCanvasCache = { key: string; canvas: HTMLCanvasElement };
+type WorldIndex = {
+  creatureById: Map<string, Creature>;
+  graveyardById: Map<string, Creature>;
+  livingByLineage: Map<string, Creature[]>;
+  deadByLineage: Map<string, Creature[]>;
+  eventsByLineage: Map<string, SimulationEvent[]>;
+};
 
 export default function App() {
   const [seed, setSeed] = useState(demoSeeds[0]);
@@ -25,11 +46,21 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string | undefined>(world.creatures[0]?.id);
   const [debug, setDebug] = useState(false);
   const [mapMode, setMapMode] = useState<MapMode>("terrain");
+  const [epoching, setEpoching] = useState(false);
+  const [detailWorld, setDetailWorld] = useState(world);
   const lastFrameTick = useRef<number | undefined>(undefined);
+  const epochRunId = useRef(0);
+  const worldIndex = useMemo(() => buildWorldIndex(world), [world]);
+  const detailWorldIndex = useMemo(() => buildWorldIndex(detailWorld), [detailWorld]);
   const selectedCreature = useMemo(
-    () => world.creatures.find((creature) => creature.id === selectedId) ?? world.creatures[0],
-    [selectedId, world.creatures]
+    () => (selectedId ? worldIndex.creatureById.get(selectedId) : undefined) ?? world.creatures[0],
+    [selectedId, world.creatures, worldIndex]
   );
+  const detailSelectedCreature = useMemo(
+    () => (selectedId ? detailWorldIndex.creatureById.get(selectedId) : undefined) ?? detailWorld.creatures[0],
+    [detailWorld.creatures, detailWorldIndex, selectedId]
+  );
+  const selectedLineageCount = selectedCreature ? (worldIndex.livingByLineage.get(selectedCreature.lineageId)?.length ?? 0) : 0;
   const latest = world.summaries.at(-1)!;
 
   useEffect(() => {
@@ -59,21 +90,57 @@ export default function App() {
     };
   }, [running]);
 
+  useEffect(() => {
+    if (!running || world.generation % 5 === 0 || world.generation - detailWorld.generation >= 5) {
+      setDetailWorld(world);
+    }
+  }, [detailWorld.generation, running, world]);
+
+  useEffect(() => {
+    if (!selectedId || detailWorldIndex.creatureById.has(selectedId)) {
+      return;
+    }
+    setDetailWorld(world);
+  }, [detailWorldIndex, selectedId, world]);
+
   function reset(nextSeed = seed) {
+    epochRunId.current += 1;
     const nextWorld = createWorld(nextSeed);
     setSeed(nextSeed);
     setWorld(nextWorld);
+    setDetailWorld(nextWorld);
     setSelectedId(nextWorld.creatures[0]?.id);
+    setEpoching(false);
   }
 
   function advanceEpoch() {
-    setWorld((current) => {
-      let next = current;
-      for (let index = 0; index < 50; index += 1) {
-        next = stepWorld(next);
+    if (epoching) return;
+    const runId = epochRunId.current + 1;
+    epochRunId.current = runId;
+    setRunning(false);
+    setEpoching(true);
+    let remaining = epochSteps;
+
+    const advanceChunk = () => {
+      if (epochRunId.current !== runId) return;
+      const steps = Math.min(epochChunkSteps, remaining);
+      setWorld((current) => {
+        let next = current;
+        for (let index = 0; index < steps; index += 1) {
+          next = stepWorld(next);
+        }
+        return next;
+      });
+      remaining -= steps;
+
+      if (remaining > 0) {
+        window.setTimeout(advanceChunk, 0);
+      } else {
+        setEpoching(false);
       }
-      return next;
-    });
+    };
+
+    window.setTimeout(advanceChunk, 0);
   }
 
   return (
@@ -97,8 +164,8 @@ export default function App() {
           <button type="button" onClick={() => setWorld((current) => stepWorld(current))}>
             Step
           </button>
-          <button type="button" onClick={advanceEpoch}>
-            Epoch
+          <button type="button" onClick={advanceEpoch} disabled={epoching}>
+            {epoching ? "Epoching" : "Epoch"}
           </button>
           <button type="button" onClick={() => reset()}>
             Reset
@@ -132,6 +199,7 @@ export default function App() {
             world={world}
             selectedId={selectedCreature?.id}
             selectedLineageId={selectedCreature?.lineageId}
+            selectedLineageCount={selectedLineageCount}
             debug={debug}
             mode={mapMode}
             onSelect={setSelectedId}
@@ -164,25 +232,61 @@ export default function App() {
           </section>
 
           <section className="lower-grid">
-            <Timeline world={world} />
-            <WorldMemory world={world} />
+            <MemoTimeline world={detailWorld} />
+            <MemoWorldMemory world={detailWorld} />
           </section>
         </div>
 
         <aside className="side-panel">
-          <CreatureInspector creature={selectedCreature} world={world} />
-          <DynastyPanel creature={selectedCreature} world={world} />
-          <SpeciesPanel world={world} />
+          <MemoCreatureInspector creature={detailSelectedCreature} world={detailWorld} />
+          <MemoDynastyPanel creature={detailSelectedCreature} world={detailWorld} index={detailWorldIndex} />
+          <MemoSpeciesPanel world={detailWorld} />
         </aside>
       </section>
     </main>
   );
 }
 
+function buildWorldIndex(world: World): WorldIndex {
+  const creatureById = new Map<string, Creature>();
+  const graveyardById = new Map<string, Creature>();
+  const livingByLineage = new Map<string, Creature[]>();
+  const deadByLineage = new Map<string, Creature[]>();
+  const eventsByLineage = new Map<string, SimulationEvent[]>();
+
+  for (const creature of world.creatures) {
+    creatureById.set(creature.id, creature);
+    pushMapList(livingByLineage, creature.lineageId, creature);
+  }
+
+  for (const creature of world.graveyard) {
+    graveyardById.set(creature.id, creature);
+    pushMapList(deadByLineage, creature.lineageId, creature);
+  }
+
+  for (const event of world.events) {
+    if (event.lineageId) {
+      pushMapList(eventsByLineage, event.lineageId, event);
+    }
+  }
+
+  return { creatureById, graveyardById, livingByLineage, deadByLineage, eventsByLineage };
+}
+
+function pushMapList<T>(map: Map<string, T[]>, key: string, item: T): void {
+  const list = map.get(key);
+  if (list) {
+    list.push(item);
+  } else {
+    map.set(key, [item]);
+  }
+}
+
 function WorldMap({
   world,
   selectedId,
   selectedLineageId,
+  selectedLineageCount,
   debug,
   mode,
   onSelect
@@ -190,19 +294,61 @@ function WorldMap({
   world: World;
   selectedId?: string;
   selectedLineageId?: string;
+  selectedLineageCount: number;
   debug: boolean;
   mode: MapMode;
   onSelect: (id: string) => void;
 }) {
-  const viewBox = `0 0 ${world.width} ${world.height}`;
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const terrainCanvasCache = useRef<TerrainCanvasCache | undefined>(undefined);
+  const [canvasSize, setCanvasSize] = useState<CanvasSize>({ width: 0, height: 0 });
 
-  function handleClick(event: React.MouseEvent<SVGSVGElement>) {
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const syncSize = () => {
+      const rect = canvas.getBoundingClientRect();
+      setCanvasSize((current) => {
+        const width = Math.round(rect.width);
+        const height = Math.round(rect.height);
+        return current.width === width && current.height === height ? current : { width, height };
+      });
+    };
+
+    syncSize();
+    if (typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const observer = new ResizeObserver(syncSize);
+    observer.observe(canvas);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || canvasSize.width <= 0 || canvasSize.height <= 0) return;
+    const context = canvas.getContext("2d");
+    if (!context) return;
+
+    drawWorldMap(context, canvas, terrainCanvasCache, canvasSize, world, mode, selectedId, selectedLineageId, selectedLineageCount, debug);
+  }, [canvasSize, debug, mode, selectedId, selectedLineageCount, selectedLineageId, world]);
+
+  function handleClick(event: React.MouseEvent<HTMLCanvasElement>) {
     const rect = event.currentTarget.getBoundingClientRect();
     const x = Math.floor(((event.clientX - rect.left) / rect.width) * world.width);
     const y = Math.floor(((event.clientY - rect.top) / rect.height) * world.height);
-    const nearest = world.creatures
-      .map((creature) => ({ creature, distance: Math.hypot(creature.x - x, creature.y - y) }))
-      .sort((a, b) => a.distance - b.distance)[0]?.creature;
+    let nearest: Creature | undefined;
+    let nearestDistance = Number.POSITIVE_INFINITY;
+
+    for (const creature of world.creatures) {
+      const distance = Math.hypot(creature.x - x, creature.y - y);
+      if (distance < nearestDistance) {
+        nearest = creature;
+        nearestDistance = distance;
+      }
+    }
 
     if (nearest) {
       onSelect(nearest.id);
@@ -210,52 +356,136 @@ function WorldMap({
   }
 
   return (
-    <svg className="world-map" viewBox={viewBox} role="img" aria-label="Living simulation map" onClick={handleClick}>
-      {world.cells.map((cell) => (
-        <rect
-          key={`${cell.x}-${cell.y}`}
-          x={cell.x}
-          y={cell.y}
-          width="1"
-          height="1"
-          className={`terrain terrain-${cell.biome}`}
-          style={{ fill: cellFill(cell, mode) }}
-          opacity={cellOpacity(cell, mode)}
-        />
-      ))}
-      {debug &&
-        world.cells
-          .filter((cell) => cell.disease > 0.55 || cell.predatorPressure > 0.55)
-          .map((cell) => (
-            <circle
-              key={`debug-${cell.x}-${cell.y}`}
-              cx={cell.x + 0.5}
-              cy={cell.y + 0.5}
-              r={cell.disease > cell.predatorPressure ? 0.22 : 0.32}
-              fill={cell.disease > cell.predatorPressure ? "#ef4444" : "#f97316"}
-              opacity="0.48"
-            />
-          ))}
-      {world.creatures.map((creature) => {
-        const isSelected = creature.id === selectedId;
-        const isLineage = creature.lineageId === selectedLineageId;
-
-        return (
-          <circle
-            key={creature.id}
-            className={`creature-marker${isLineage ? " lineage-marker" : ""}${isSelected ? " selected-marker" : ""}`}
-            cx={creature.x + 0.5}
-            cy={creature.y + 0.5}
-            r={isSelected ? 0.62 : isLineage ? 0.48 + creature.energy * 0.08 : 0.34 + creature.energy * 0.08}
-            fill={speciesColor(creature.speciesId)}
-            stroke={isSelected ? "#ffffff" : isLineage ? "#fde68a" : "rgba(255,255,255,0.18)"}
-            strokeWidth={isSelected ? 0.24 : isLineage ? 0.16 : 0.06}
-            opacity={selectedLineageId && !isLineage ? 0.72 : 1}
-          />
-        );
-      })}
-    </svg>
+    <canvas
+      ref={canvasRef}
+      className="world-map"
+      role="img"
+      aria-label="Living simulation map"
+      data-generation={world.generation}
+      data-terrain-cells={world.cells.length}
+      data-creatures-rendered={world.creatures.length}
+      data-selected-lineage-count={selectedLineageCount}
+      data-map-mode={mode}
+      onClick={handleClick}
+    />
   );
+}
+
+function drawWorldMap(
+  context: CanvasRenderingContext2D,
+  canvas: HTMLCanvasElement,
+  terrainCanvasCache: MutableRefObject<TerrainCanvasCache | undefined>,
+  canvasSize: CanvasSize,
+  world: World,
+  mode: MapMode,
+  selectedId: string | undefined,
+  selectedLineageId: string | undefined,
+  selectedLineageCount: number,
+  debug: boolean
+): void {
+  const pixelRatio = Math.max(1, window.devicePixelRatio || 1);
+  const pixelWidth = Math.max(1, Math.round(canvasSize.width * pixelRatio));
+  const pixelHeight = Math.max(1, Math.round(canvasSize.height * pixelRatio));
+  if (canvas.width !== pixelWidth) canvas.width = pixelWidth;
+  if (canvas.height !== pixelHeight) canvas.height = pixelHeight;
+
+  context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+  context.clearRect(0, 0, canvasSize.width, canvasSize.height);
+
+  const cellWidth = canvasSize.width / world.width;
+  const cellHeight = canvasSize.height / world.height;
+  const radiusBase = Math.min(cellWidth, cellHeight);
+
+  if (mode === "terrain") {
+    drawCachedTerrainLayer(context, terrainCanvasCache, canvasSize, world, pixelRatio, cellWidth, cellHeight);
+    drawTerrainVitalityLayer(context, world, cellWidth, cellHeight);
+  } else {
+    for (const cell of world.cells) {
+      context.globalAlpha = cellOpacity(cell, mode);
+      context.fillStyle = cellFill(cell, mode) ?? biomeColors[cell.biome];
+      context.fillRect(cell.x * cellWidth, cell.y * cellHeight, cellWidth + 0.35, cellHeight + 0.35);
+    }
+  }
+
+  if (debug) {
+    for (const cell of world.cells) {
+      if (cell.disease <= 0.55 && cell.predatorPressure <= 0.55) continue;
+      context.globalAlpha = 0.48;
+      context.fillStyle = cell.disease > cell.predatorPressure ? "#ef4444" : "#f97316";
+      context.beginPath();
+      context.arc((cell.x + 0.5) * cellWidth, (cell.y + 0.5) * cellHeight, radiusBase * (cell.disease > cell.predatorPressure ? 0.22 : 0.32), 0, Math.PI * 2);
+      context.fill();
+    }
+  }
+
+  for (const creature of world.creatures) {
+    const isSelected = creature.id === selectedId;
+    const isLineage = selectedLineageCount > 0 && creature.lineageId === selectedLineageId;
+    context.globalAlpha = selectedLineageId && !isLineage ? 0.72 : 1;
+    context.fillStyle = speciesColor(creature.speciesId);
+    context.strokeStyle = isSelected ? "#ffffff" : isLineage ? "#fde68a" : "rgba(255,255,255,0.22)";
+    context.lineWidth = isSelected ? 2.1 : isLineage ? 1.45 : 0.75;
+    context.beginPath();
+    context.arc(
+      (creature.x + 0.5) * cellWidth,
+      (creature.y + 0.5) * cellHeight,
+      radiusBase * (isSelected ? 0.62 : isLineage ? 0.48 + creature.energy * 0.08 : 0.34 + creature.energy * 0.08),
+      0,
+      Math.PI * 2
+    );
+    context.fill();
+    context.stroke();
+  }
+
+  context.globalAlpha = 1;
+}
+
+function drawTerrainVitalityLayer(context: CanvasRenderingContext2D, world: World, cellWidth: number, cellHeight: number): void {
+  for (const cell of world.cells) {
+    const stress = Math.max(cell.disease * 0.5, cell.predatorPressure * 0.42);
+    const foodGlow = cell.food * 0.22;
+    context.globalAlpha = Math.max(0.06, foodGlow + stress);
+    context.fillStyle = stress > foodGlow ? "rgba(239, 68, 68, 0.42)" : "rgba(132, 204, 22, 0.34)";
+    context.fillRect(cell.x * cellWidth, cell.y * cellHeight, cellWidth + 0.35, cellHeight + 0.35);
+  }
+
+  context.globalAlpha = 1;
+}
+
+function drawCachedTerrainLayer(
+  context: CanvasRenderingContext2D,
+  terrainCanvasCache: MutableRefObject<TerrainCanvasCache | undefined>,
+  canvasSize: CanvasSize,
+  world: World,
+  pixelRatio: number,
+  cellWidth: number,
+  cellHeight: number
+): void {
+  const cacheKey = `${world.seed}:${world.width}x${world.height}:${canvasSize.width}x${canvasSize.height}:${pixelRatio}`;
+  let cache = terrainCanvasCache.current;
+
+  if (!cache || cache.key !== cacheKey) {
+    const terrainCanvas = document.createElement("canvas");
+    terrainCanvas.width = Math.max(1, Math.round(canvasSize.width * pixelRatio));
+    terrainCanvas.height = Math.max(1, Math.round(canvasSize.height * pixelRatio));
+    const terrainContext = terrainCanvas.getContext("2d");
+
+    if (terrainContext) {
+      terrainContext.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+      for (const cell of world.cells) {
+        terrainContext.globalAlpha = terrainCellOpacity(cell);
+        terrainContext.fillStyle = biomeColors[cell.biome];
+        terrainContext.fillRect(cell.x * cellWidth, cell.y * cellHeight, cellWidth + 0.35, cellHeight + 0.35);
+      }
+      terrainContext.globalAlpha = 1;
+    }
+
+    cache = { key: cacheKey, canvas: terrainCanvas };
+    terrainCanvasCache.current = cache;
+  }
+
+  context.globalAlpha = 1;
+  context.drawImage(cache.canvas, 0, 0, canvasSize.width, canvasSize.height);
 }
 
 function MapLegend({ mode }: { mode: MapMode }) {
@@ -362,18 +592,18 @@ function SurvivalPressurePanel({ pressure }: { pressure: CreaturePressureReport 
   );
 }
 
-function DynastyPanel({ creature, world }: { creature?: Creature; world: World }) {
+function DynastyPanel({ creature, world, index }: { creature?: Creature; world: World; index: WorldIndex }) {
   if (!creature) {
     return <section className="panel">No dynasty selected.</section>;
   }
 
   const cell = world.cells[creature.y * world.width + creature.x];
-  const livingLineage = world.creatures.filter((candidate) => candidate.lineageId === creature.lineageId);
-  const archivedLineage = world.graveyard.filter((candidate) => candidate.lineageId === creature.lineageId);
+  const livingLineage = index.livingByLineage.get(creature.lineageId) ?? [];
+  const archivedLineage = index.deadByLineage.get(creature.lineageId) ?? [];
   const allLineage = [...livingLineage, ...archivedLineage];
-  const parentNames = creature.parentIds.map((id) => creatureName(id, world));
-  const lineageEvents = world.events
-    .filter((event) => event.lineageId === creature.lineageId || event.creatureId === creature.id || event.parentIds?.includes(creature.id))
+  const parentNames = creature.parentIds.map((id) => creatureName(id, index));
+  const lineageEvents = (index.eventsByLineage.get(creature.lineageId) ?? [])
+    .filter((event) => event.creatureId === creature.id || event.parentIds?.includes(creature.id) || event.lineageId === creature.lineageId)
     .slice(-6)
     .reverse();
   const mutationTrail = allLineage.flatMap((candidate) =>
@@ -414,7 +644,7 @@ function DynastyPanel({ creature, world }: { creature?: Creature; world: World }
         </span>
       </div>
 
-      <LineageLens creature={creature} world={world} />
+      <LineageLens creature={creature} world={world} index={index} />
 
       <div className="pressure-grid">
         <div>
@@ -454,11 +684,11 @@ function DynastyPanel({ creature, world }: { creature?: Creature; world: World }
   );
 }
 
-function LineageLens({ creature, world }: { creature: Creature; world: World }) {
-  const relatives = lineageRelatives(creature, world);
+function LineageLens({ creature, world, index }: { creature: Creature; world: World; index: WorldIndex }) {
+  const relatives = lineageRelatives(creature, index);
   const species = world.species.find((item) => item.id === creature.speciesId);
   const parentGenomes = creature.parentIds
-    .map((id) => findCreatureRecord(id, world)?.creature.genome)
+    .map((id) => findCreatureRecord(id, index)?.creature.genome)
     .filter((genome): genome is Genome => Boolean(genome));
   const parentAverage = averageGenomes(parentGenomes);
   const speciesDeltas = species ? topGenomeDeltas(creature.genome, species.averageGenome, 4) : [];
@@ -471,7 +701,7 @@ function LineageLens({ creature, world }: { creature: Creature; world: World }) 
           <p className="eyebrow">Lineage lens</p>
           <strong>{relatives.length} tracked relatives</strong>
         </div>
-        <span>{world.creatures.filter((candidate) => candidate.lineageId === creature.lineageId).length} alive on map</span>
+        <span>{index.livingByLineage.get(creature.lineageId)?.length ?? 0} alive on map</span>
       </div>
       <div className="family-thread" aria-label="Lineage family thread">
         {relatives.map((relative) => (
@@ -661,6 +891,12 @@ function WorldMemory({ world }: { world: World }) {
   );
 }
 
+const MemoCreatureInspector = memo(CreatureInspector);
+const MemoDynastyPanel = memo(DynastyPanel);
+const MemoSpeciesPanel = memo(SpeciesPanel);
+const MemoTimeline = memo(Timeline);
+const MemoWorldMemory = memo(WorldMemory);
+
 function MiniLedger({
   title,
   empty,
@@ -687,28 +923,28 @@ function MiniLedger({
   );
 }
 
-function creatureName(id: string, world: World): string {
-  return world.creatures.find((creature) => creature.id === id)?.name ?? world.graveyard.find((creature) => creature.id === id)?.name ?? id;
+function creatureName(id: string, index: WorldIndex): string {
+  return index.creatureById.get(id)?.name ?? index.graveyardById.get(id)?.name ?? id;
 }
 
-function findCreatureRecord(id: string, world: World): { creature: Creature; status: "living" | "dead" } | undefined {
-  const living = world.creatures.find((creature) => creature.id === id);
+function findCreatureRecord(id: string, index: WorldIndex): CreatureRecord | undefined {
+  const living = index.creatureById.get(id);
   if (living) return { creature: living, status: "living" };
-  const dead = world.graveyard.find((creature) => creature.id === id);
+  const dead = index.graveyardById.get(id);
   if (dead) return { creature: dead, status: "dead" };
   return undefined;
 }
 
-function lineageRelatives(creature: Creature, world: World): Array<{ creature: Creature; role: string; status: "living" | "dead" }> {
+function lineageRelatives(creature: Creature, index: WorldIndex): Array<{ creature: Creature; role: string; status: "living" | "dead" }> {
   const records = [
     { creature, role: "selected", status: "living" as const },
     ...creature.parentIds
-      .map((id) => findCreatureRecord(id, world))
-      .filter((record): record is { creature: Creature; status: "living" | "dead" } => Boolean(record))
+      .map((id) => findCreatureRecord(id, index))
+      .filter((record): record is CreatureRecord => Boolean(record))
       .map((record) => ({ ...record, role: "parent" })),
     ...creature.ancestorIds
-      .map((id) => findCreatureRecord(id, world))
-      .filter((record): record is { creature: Creature; status: "living" | "dead" } => Boolean(record))
+      .map((id) => findCreatureRecord(id, index))
+      .filter((record): record is CreatureRecord => Boolean(record))
       .map((record) => ({ ...record, role: "ancestor" }))
   ];
   const seen = new Set<string>();
@@ -787,6 +1023,10 @@ function cellOpacity(cell: World["cells"][number], mode: MapMode): number {
   if (mode === "disease") return 0.5 + cell.disease * 0.48;
   if (mode === "predators") return 0.5 + cell.predatorPressure * 0.48;
   return 0.74;
+}
+
+function terrainCellOpacity(cell: World["cells"][number]): number {
+  return Math.max(0.44, Math.min(0.92, 0.58 + cell.fertility * 0.28 - cell.elevation * 0.08));
 }
 
 function eventColor(kind: SimulationEvent["kind"]): string {

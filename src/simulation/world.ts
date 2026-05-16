@@ -99,13 +99,6 @@ export function stepWorld(input: World): World {
 
   const deaths: Creature[] = [];
   const births: Creature[] = [];
-  const occupied = new Map<string, Creature[]>();
-  for (const creature of world.creatures) {
-    const key = `${creature.x},${creature.y}`;
-    const list = occupied.get(key) ?? [];
-    list.push(creature);
-    occupied.set(key, list);
-  }
 
   for (const creature of world.creatures) {
     if (creature.causeOfDeath) {
@@ -135,8 +128,12 @@ export function stepWorld(input: World): World {
       });
       continue;
     }
+  }
 
-    const neighbors = nearbyCreatures(creature, world.creatures, 2).filter((mate) => !mate.causeOfDeath);
+  const matingPool = world.creatures.filter((creature) => !creature.causeOfDeath);
+  const occupied = buildCreatureBuckets(matingPool);
+  for (const creature of matingPool) {
+    const neighbors = nearbyCreatures(creature, occupied, 2);
     const mate = chooseMate(creature, neighbors, rng);
     if (mate && shouldReproduce(creature, mate, world.creatures.length, rng)) {
       const child = createChild(creature, mate, world, rng);
@@ -415,13 +412,34 @@ function deathCauseFor(creature: Creature, cell: TerrainCell, rng: Rng): string 
   return undefined;
 }
 
-function nearbyCreatures(creature: Creature, creatures: Creature[], radius: number): Creature[] {
-  return creatures.filter(
-    (candidate) =>
-      candidate.id !== creature.id &&
-      Math.abs(candidate.x - creature.x) <= radius &&
-      Math.abs(candidate.y - creature.y) <= radius
-  );
+function buildCreatureBuckets(creatures: Creature[]): Map<string, Creature[]> {
+  const buckets = new Map<string, Creature[]>();
+  for (const creature of creatures) {
+    const key = `${creature.x},${creature.y}`;
+    const bucket = buckets.get(key);
+    if (bucket) {
+      bucket.push(creature);
+    } else {
+      buckets.set(key, [creature]);
+    }
+  }
+  return buckets;
+}
+
+function nearbyCreatures(creature: Creature, buckets: Map<string, Creature[]>, radius: number): Creature[] {
+  const neighbors: Creature[] = [];
+  for (let y = creature.y - radius; y <= creature.y + radius; y += 1) {
+    for (let x = creature.x - radius; x <= creature.x + radius; x += 1) {
+      const bucket = buckets.get(`${x},${y}`);
+      if (!bucket) continue;
+      for (const candidate of bucket) {
+        if (candidate.id !== creature.id && Math.abs(candidate.x - creature.x) <= radius && Math.abs(candidate.y - creature.y) <= radius) {
+          neighbors.push(candidate);
+        }
+      }
+    }
+  }
+  return neighbors;
 }
 
 function chooseMate(creature: Creature, candidates: Creature[], rng: Rng): Creature | undefined {
