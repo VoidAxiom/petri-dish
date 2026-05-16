@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { createWorld, genomeKeys, speciesColor, stepWorld, type Creature, type Genome, type World } from "./simulation";
+import { createWorld, genomeKeys, speciesColor, stepWorld, type Creature, type Genome, type SimulationEvent, type World } from "./simulation";
 
 const demoSeeds = ["mythic-lagoon-17", "glass-drought-41", "ember-reef-93"];
 
@@ -90,6 +90,7 @@ export default function App() {
 
         <aside className="side-panel">
           <CreatureInspector creature={selectedCreature} world={world} />
+          <DynastyPanel creature={selectedCreature} world={world} />
           <SpeciesPanel world={world} />
         </aside>
       </section>
@@ -104,7 +105,7 @@ export default function App() {
 
       <section className="lower-grid">
         <Timeline world={world} />
-        <ExtinctionLog world={world} />
+        <WorldMemory world={world} />
       </section>
     </main>
   );
@@ -213,6 +214,96 @@ function CreatureInspector({ creature, world }: { creature?: Creature; world: Wo
   );
 }
 
+function DynastyPanel({ creature, world }: { creature?: Creature; world: World }) {
+  if (!creature) {
+    return <section className="panel">No dynasty selected.</section>;
+  }
+
+  const cell = world.cells[creature.y * world.width + creature.x];
+  const livingLineage = world.creatures.filter((candidate) => candidate.lineageId === creature.lineageId);
+  const archivedLineage = world.graveyard.filter((candidate) => candidate.lineageId === creature.lineageId);
+  const allLineage = [...livingLineage, ...archivedLineage];
+  const parentNames = creature.parentIds.map((id) => creatureName(id, world));
+  const lineageEvents = world.events
+    .filter((event) => event.lineageId === creature.lineageId || event.creatureId === creature.id || event.parentIds?.includes(creature.id))
+    .slice(-6)
+    .reverse();
+  const mutationTrail = allLineage.flatMap((candidate) =>
+    candidate.mutations.map((mutation) => ({
+      creature: candidate.name,
+      ...mutation
+    }))
+  );
+  const averageFitness =
+    livingLineage.reduce((sum, candidate) => sum + candidate.fitness, 0) / Math.max(1, livingLineage.length);
+  const totalBirths = allLineage.reduce((sum, candidate) => sum + candidate.births, 0);
+  const speciesTouched = new Set(allLineage.map((candidate) => candidate.speciesId)).size;
+
+  return (
+    <section className="panel dynasty-panel">
+      <div className="panel-heading">
+        <div>
+          <p className="eyebrow">Dynasty</p>
+          <h2>{creature.lineageId}</h2>
+        </div>
+        <span className="lineage-badge">{livingLineage.length} living</span>
+      </div>
+
+      <div className="fact-grid dynasty-facts">
+        <Fact label="Archived dead" value={archivedLineage.length} />
+        <Fact label="Total births" value={totalBirths} />
+        <Fact label="Avg fitness" value={averageFitness.toFixed(2)} />
+        <Fact label="Species touched" value={speciesTouched} />
+        <Fact label="Mutations" value={mutationTrail.length} />
+        <Fact label="Ancestors" value={creature.ancestorIds.length || "founder"} />
+      </div>
+
+      <div className="lineage-thread">
+        <p className="eyebrow">Parentage</p>
+        <strong>{parentNames.length ? parentNames.join(" x ") : "founder generation"}</strong>
+        <span>
+          age {creature.age} · born generation {creature.generation} · {creature.births} direct births
+        </span>
+      </div>
+
+      <div className="pressure-grid">
+        <div>
+          <span>Food</span>
+          <strong>{cell.food.toFixed(2)}</strong>
+        </div>
+        <div>
+          <span>Disease</span>
+          <strong>{cell.disease.toFixed(2)}</strong>
+        </div>
+        <div>
+          <span>Predators</span>
+          <strong>{cell.predatorPressure.toFixed(2)}</strong>
+        </div>
+      </div>
+
+      <MiniLedger
+        title="Mutation trail"
+        empty="no inherited mutations recorded"
+        items={mutationTrail.slice(-5).reverse().map((mutation) => ({
+          key: `${mutation.creature}-${mutation.generation}-${mutation.gene}-${mutation.delta}`,
+          label: `g${mutation.generation}`,
+          text: `${mutation.creature} shifted ${mutation.gene} by ${mutation.delta}`
+        }))}
+      />
+
+      <MiniLedger
+        title="Recent lineage events"
+        empty="no recent lineage events"
+        items={lineageEvents.map((event) => ({
+          key: event.id,
+          label: `g${event.generation}`,
+          text: event.message
+        }))}
+      />
+    </section>
+  );
+}
+
 function GenomeBars({ genome }: { genome: Genome }) {
   return (
     <div className="genome-bars">
@@ -267,6 +358,12 @@ function Metric({ label, value, tone }: { label: string; value: number; tone: st
 function Timeline({ world }: { world: World }) {
   const points = world.summaries.slice(-80);
   const maxPopulation = Math.max(1, ...points.map((point) => point.population));
+  const firstGeneration = points[0]?.generation ?? 0;
+  const generationSpan = Math.max(1, (points.at(-1)?.generation ?? firstGeneration) - firstGeneration);
+  const ledgerMarkers = world.events
+    .filter((event) => event.kind === "catastrophe" || event.kind === "extinction" || event.kind === "speciation")
+    .filter((event) => event.generation >= firstGeneration)
+    .slice(-36);
   const path = points
     .map((point, index) => {
       const x = (index / Math.max(1, points.length - 1)) * 100;
@@ -285,6 +382,19 @@ function Timeline({ world }: { world: World }) {
       </div>
       <svg className="timeline" viewBox="0 0 100 52" preserveAspectRatio="none">
         <path d={path} fill="none" stroke="#38bdf8" strokeWidth="1.6" vectorEffect="non-scaling-stroke" />
+        {ledgerMarkers.map((event) => {
+          const x = ((event.generation - firstGeneration) / generationSpan) * 100;
+          return (
+            <circle
+              key={event.id}
+              cx={x}
+              cy={event.kind === "catastrophe" ? 8 : event.kind === "extinction" ? 44 : 18}
+              r={event.kind === "catastrophe" ? 1.7 : 1.2}
+              fill={eventColor(event.kind)}
+              opacity="0.88"
+            />
+          );
+        })}
         {points.map((point, index) =>
           point.event ? (
             <line
@@ -304,37 +414,69 @@ function Timeline({ world }: { world: World }) {
   );
 }
 
-function ExtinctionLog({ world }: { world: World }) {
-  const events = world.summaries
-    .filter((summary) => summary.event || summary.extinctions.length > 0 || summary.deaths > summary.births * 2)
-    .slice(-8)
-    .reverse();
+function WorldMemory({ world }: { world: World }) {
+  const events = world.events.slice(-10).reverse();
 
   return (
     <section className="panel">
       <div className="panel-heading">
         <div>
-          <p className="eyebrow">Extinction report</p>
+          <p className="eyebrow">Event ledger</p>
           <h2>World memory</h2>
         </div>
       </div>
       <div className="log-list">
         {events.length ? (
           events.map((event) => (
-            <div key={`${event.generation}-${event.deaths}-${event.births}`} className="log-row">
+            <div key={event.id} className="log-row">
               <strong>Gen {event.generation}</strong>
-              <span>
-                {event.event?.name ?? "mortality spike"} · births {event.births}, deaths {event.deaths}
-                {event.extinctions.length ? ` · ${event.extinctions.length} species lost` : ""}
-              </span>
+              <span className={`event-kind event-kind-${event.kind}`}>{event.kind}</span>
+              <span>{event.message}</span>
             </div>
           ))
         ) : (
-          <p className="quiet">No collapses recorded yet.</p>
+          <p className="quiet">No causal events recorded yet.</p>
         )}
       </div>
     </section>
   );
+}
+
+function MiniLedger({
+  title,
+  empty,
+  items
+}: {
+  title: string;
+  empty: string;
+  items: Array<{ key: string; label: string; text: string }>;
+}) {
+  return (
+    <div className="mini-ledger">
+      <p className="eyebrow">{title}</p>
+      {items.length ? (
+        items.map((item) => (
+          <div key={item.key} className="mini-ledger-row">
+            <strong>{item.label}</strong>
+            <span>{item.text}</span>
+          </div>
+        ))
+      ) : (
+        <p className="quiet">{empty}</p>
+      )}
+    </div>
+  );
+}
+
+function creatureName(id: string, world: World): string {
+  return world.creatures.find((creature) => creature.id === id)?.name ?? world.graveyard.find((creature) => creature.id === id)?.name ?? id;
+}
+
+function eventColor(kind: SimulationEvent["kind"]): string {
+  if (kind === "catastrophe") return "#f97316";
+  if (kind === "extinction") return "#ef4444";
+  if (kind === "speciation") return "#22c55e";
+  return "#38bdf8";
 }
 
 function Fact({ label, value }: { label: string; value: string | number }) {
