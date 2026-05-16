@@ -2,6 +2,9 @@
 node_modules
 dist
 coverage
+test-results
+playwright-report
+artifacts/screenshots
 .DS_Store
 *.log
 *.tsbuildinfo

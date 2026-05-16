@@ -34,5 +34,19 @@ jobs:
       - name: Simulation report smoke
         run: npm run sim:report:smoke
 
+      - name: Browser render smoke
+        run: npm run test:e2e
+
+      - name: Upload render artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: render-artifacts
+          path: |
+            artifacts/screenshots
+            playwright-report
+            test-results
+          if-no-files-found: ignore
+
       - name: Build
         run: npm run build

@@ -86,6 +86,19 @@ export default function App() {
               <span>dominant trait</span>
             </div>
           </div>
+
+          <section className="dashboard-grid">
+            <Metric label="Food" value={latest.averageFood} tone="green" />
+            <Metric label="Disease" value={latest.averageDisease} tone="red" />
+            <Metric label="Predators" value={latest.averagePredatorPressure} tone="amber" />
+            <Metric label="Diversity" value={latest.diversity} tone="cyan" />
+            <Metric label="Fitness" value={latest.averageFitness} tone="violet" />
+          </section>
+
+          <section className="lower-grid">
+            <Timeline world={world} />
+            <WorldMemory world={world} />
+          </section>
         </div>
 
         <aside className="side-panel">
@@ -93,19 +106,6 @@ export default function App() {
           <DynastyPanel creature={selectedCreature} world={world} />
           <SpeciesPanel world={world} />
         </aside>
-      </section>
-
-      <section className="dashboard-grid">
-        <Metric label="Food" value={latest.averageFood} tone="green" />
-        <Metric label="Disease" value={latest.averageDisease} tone="red" />
-        <Metric label="Predators" value={latest.averagePredatorPressure} tone="amber" />
-        <Metric label="Diversity" value={latest.diversity} tone="cyan" />
-        <Metric label="Fitness" value={latest.averageFitness} tone="violet" />
-      </section>
-
-      <section className="lower-grid">
-        <Timeline world={world} />
-        <WorldMemory world={world} />
       </section>
     </main>
   );

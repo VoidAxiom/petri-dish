@@ -10,6 +10,7 @@
     "preview": "vite preview --host 127.0.0.1",
     "sim:report": "tsx scripts/sim-report.ts",
     "sim:report:smoke": "npm run sim:report -- --seed mythic-lagoon-17 --generations 120 --width 24 --height 14 --population 80",
+    "test:e2e": "playwright test",
     "typecheck": "tsc --noEmit --pretty false",
     "test": "vitest run",
     "test:watch": "vitest"
@@ -23,6 +24,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
+    "@playwright/test": "^1.60.0",
     "@testing-library/jest-dom": "^6.0.0",
     "@testing-library/react": "^16.0.0",
     "@types/node": "^24.0.0",
