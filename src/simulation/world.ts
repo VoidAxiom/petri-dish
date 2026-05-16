@@ -1,6 +1,6 @@
 import { clamp, createRng, round, type Rng } from "./rng";
 import { averageGenome, buildSpeciesSummaries, dominantTrait, genomeKeys, speciesIdForGenome } from "./species";
-import type { Biome, Creature, GenerationSummary, Genome, MutationRecord, TerrainCell, World, WorldEvent, WorldOptions } from "./types";
+import type { Biome, Creature, GenerationSummary, Genome, MutationRecord, SimulationEvent, TerrainCell, World, WorldEvent, WorldOptions } from "./types";
 
 const biomeFertility: Record<Biome, number> = {
   mire: 0.72,
@@ -64,6 +64,7 @@ export function createWorld(seed: string, options: WorldOptions = {}): World {
     graveyard: [],
     summaries: [],
     species: [],
+    events: [],
     nextId: initialPopulation + 1
   };
 
@@ -77,7 +78,22 @@ export function stepWorld(input: World): World {
   const world = cloneWorld(input);
   const rng = createRng(`${world.seed}:generation:${world.generation + 1}`);
   world.generation += 1;
+  const stepEvents: SimulationEvent[] = [];
+  const pushEvent = (event: Omit<SimulationEvent, "id">) => {
+    stepEvents.push({ id: `g${world.generation}-${stepEvents.length + 1}-${event.kind}`, ...event });
+  };
+  const previousEvent = world.currentEvent;
   world.currentEvent = updateEvent(world, rng);
+  if (world.currentEvent && world.currentEvent.startedAt === world.generation && previousEvent?.startedAt !== world.currentEvent.startedAt) {
+    pushEvent({
+      generation: world.generation,
+      kind: "catastrophe",
+      eventKind: world.currentEvent.kind,
+      severity: world.currentEvent.severity,
+      population: world.creatures.length,
+      message: `${world.currentEvent.name} began with severity ${world.currentEvent.severity}.`
+    });
+  }
   updateTerrain(world, rng);
 
   const deaths: Creature[] = [];
@@ -106,13 +122,46 @@ export function stepWorld(input: World): World {
     if (deathCause) {
       creature.causeOfDeath = deathCause;
       deaths.push(creature);
+      pushEvent({
+        generation: world.generation,
+        kind: "death",
+        creatureId: creature.id,
+        speciesId: creature.speciesId,
+        lineageId: creature.lineageId,
+        cause: deathCause,
+        population: world.creatures.length,
+        message: `${creature.name} died of ${deathCause} in ${cell.biome}.`
+      });
       continue;
     }
 
     const neighbors = nearbyCreatures(creature, world.creatures, 2).filter((mate) => !mate.causeOfDeath);
     const mate = chooseMate(creature, neighbors, rng);
     if (mate && shouldReproduce(creature, mate, world.creatures.length, rng)) {
-      births.push(createChild(creature, mate, world, rng));
+      const child = createChild(creature, mate, world, rng);
+      births.push(child);
+      pushEvent({
+        generation: world.generation,
+        kind: "birth",
+        creatureId: child.id,
+        speciesId: child.speciesId,
+        lineageId: child.lineageId,
+        parentIds: child.parentIds,
+        population: world.creatures.length,
+        message: `${child.name} was born to ${creature.name} and ${mate.name}.`
+      });
+      for (const mutation of child.mutations) {
+        pushEvent({
+          generation: world.generation,
+          kind: "mutation",
+          creatureId: child.id,
+          speciesId: child.speciesId,
+          lineageId: child.lineageId,
+          gene: mutation.gene,
+          delta: mutation.delta,
+          message: `${child.name} mutated ${mutation.gene} by ${mutation.delta}.`
+        });
+      }
       creature.births += 1;
       mate.births += 1;
       creature.energy *= 0.64;
@@ -127,6 +176,7 @@ export function stepWorld(input: World): World {
   const previousSpecies = new Map(world.species.map((item) => [item.id, item]));
   world.species = buildSpeciesSummaries(world.creatures, world.cells, world.width, world.species);
   const extinctions = [...previousSpecies.keys()].filter((id) => !world.species.some((item) => item.id === id));
+  const newSpecies = world.species.filter((species) => !previousSpecies.has(species.id));
 
   for (const species of world.species) {
     const previous = previousSpecies.get(species.id);
@@ -134,6 +184,27 @@ export function stepWorld(input: World): World {
     species.deaths = (previous?.deaths ?? 0) + deaths.filter((creature) => creature.speciesId === species.id).length;
   }
 
+  for (const species of newSpecies) {
+    pushEvent({
+      generation: world.generation,
+      kind: "speciation",
+      speciesId: species.id,
+      population: species.population,
+      message: `${species.id} emerged in ${species.dominantBiome} with ${species.population} members.`
+    });
+  }
+
+  for (const speciesId of extinctions) {
+    pushEvent({
+      generation: world.generation,
+      kind: "extinction",
+      speciesId,
+      population: world.creatures.length,
+      message: `${speciesId} disappeared from the living population.`
+    });
+  }
+
+  world.events = [...world.events, ...stepEvents].slice(-2_000);
   world.summaries = [...world.summaries, summarize(world, births.length, deaths.length, extinctions)].slice(-260);
   return world;
 }
@@ -166,6 +237,10 @@ function cloneWorld(world: World): World {
     species: world.species.map((species) => ({
       ...species,
       averageGenome: { ...species.averageGenome }
+    })),
+    events: world.events.map((event) => ({
+      ...event,
+      parentIds: event.parentIds ? [...event.parentIds] : undefined
     })),
     currentEvent: world.currentEvent ? { ...world.currentEvent } : undefined
   };

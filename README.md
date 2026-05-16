@@ -29,6 +29,12 @@ npm test
 npm run build
 ```
 
+Generate a deterministic long-horizon evidence report:
+
+```bash
+npm run sim:report -- --seed mythic-lagoon-17 --generations 240
+```
+
 ## Design Principles
 
 - No fake demo stats. UI metrics must derive from simulation state.
