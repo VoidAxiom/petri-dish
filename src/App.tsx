@@ -98,7 +98,14 @@ export default function App() {
             </div>
             <MapLegend mode={mapMode} />
           </div>
-          <WorldMap world={world} selectedId={selectedCreature?.id} debug={debug} mode={mapMode} onSelect={setSelectedId} />
+          <WorldMap
+            world={world}
+            selectedId={selectedCreature?.id}
+            selectedLineageId={selectedCreature?.lineageId}
+            debug={debug}
+            mode={mapMode}
+            onSelect={setSelectedId}
+          />
           <div className="event-strip">
             <div>
               <strong>Generation {world.generation}</strong>
@@ -145,12 +152,14 @@ export default function App() {
 function WorldMap({
   world,
   selectedId,
+  selectedLineageId,
   debug,
   mode,
   onSelect
 }: {
   world: World;
   selectedId?: string;
+  selectedLineageId?: string;
   debug: boolean;
   mode: MapMode;
   onSelect: (id: string) => void;
@@ -197,17 +206,24 @@ function WorldMap({
               opacity="0.48"
             />
           ))}
-      {world.creatures.map((creature) => (
-        <circle
-          key={creature.id}
-          cx={creature.x + 0.5}
-          cy={creature.y + 0.5}
-          r={creature.id === selectedId ? 0.58 : 0.34 + creature.energy * 0.08}
-          fill={speciesColor(creature.speciesId)}
-          stroke={creature.id === selectedId ? "#ffffff" : "rgba(255,255,255,0.18)"}
-          strokeWidth={creature.id === selectedId ? 0.22 : 0.06}
-        />
-      ))}
+      {world.creatures.map((creature) => {
+        const isSelected = creature.id === selectedId;
+        const isLineage = creature.lineageId === selectedLineageId;
+
+        return (
+          <circle
+            key={creature.id}
+            className={`creature-marker${isLineage ? " lineage-marker" : ""}${isSelected ? " selected-marker" : ""}`}
+            cx={creature.x + 0.5}
+            cy={creature.y + 0.5}
+            r={isSelected ? 0.62 : isLineage ? 0.48 + creature.energy * 0.08 : 0.34 + creature.energy * 0.08}
+            fill={speciesColor(creature.speciesId)}
+            stroke={isSelected ? "#ffffff" : isLineage ? "#fde68a" : "rgba(255,255,255,0.18)"}
+            strokeWidth={isSelected ? 0.24 : isLineage ? 0.16 : 0.06}
+            opacity={selectedLineageId && !isLineage ? 0.72 : 1}
+          />
+        );
+      })}
     </svg>
   );
 }
@@ -368,6 +384,8 @@ function DynastyPanel({ creature, world }: { creature?: Creature; world: World }
         </span>
       </div>
 
+      <LineageLens creature={creature} world={world} />
+
       <div className="pressure-grid">
         <div>
           <span>Food</span>
@@ -403,6 +421,75 @@ function DynastyPanel({ creature, world }: { creature?: Creature; world: World }
         }))}
       />
     </section>
+  );
+}
+
+function LineageLens({ creature, world }: { creature: Creature; world: World }) {
+  const relatives = lineageRelatives(creature, world);
+  const species = world.species.find((item) => item.id === creature.speciesId);
+  const parentGenomes = creature.parentIds
+    .map((id) => findCreatureRecord(id, world)?.creature.genome)
+    .filter((genome): genome is Genome => Boolean(genome));
+  const parentAverage = averageGenomes(parentGenomes);
+  const speciesDeltas = species ? topGenomeDeltas(creature.genome, species.averageGenome, 4) : [];
+  const parentDeltas = parentAverage ? topGenomeDeltas(creature.genome, parentAverage, 3) : [];
+
+  return (
+    <div className="lineage-lens">
+      <div className="lineage-lens-heading">
+        <div>
+          <p className="eyebrow">Lineage lens</p>
+          <strong>{relatives.length} tracked relatives</strong>
+        </div>
+        <span>{world.creatures.filter((candidate) => candidate.lineageId === creature.lineageId).length} alive on map</span>
+      </div>
+      <div className="family-thread" aria-label="Lineage family thread">
+        {relatives.map((relative) => (
+          <div key={`${relative.role}-${relative.creature.id}`} className={`family-node family-node-${relative.status}`}>
+            <strong>{relative.creature.name}</strong>
+            <span>
+              {relative.role} · {relative.status} · g{relative.creature.generation}
+            </span>
+          </div>
+        ))}
+      </div>
+      <div className="genome-compare">
+        <GenomeDeltaList title="Species drift" items={speciesDeltas} empty="no species baseline yet" />
+        <GenomeDeltaList title="Parent drift" items={parentDeltas} empty="founder genome has no parent baseline" />
+      </div>
+    </div>
+  );
+}
+
+function GenomeDeltaList({
+  title,
+  items,
+  empty
+}: {
+  title: string;
+  items: Array<{ gene: keyof Genome; delta: number; value: number; baseline: number }>;
+  empty: string;
+}) {
+  return (
+    <div className="delta-list">
+      <p className="eyebrow">{title}</p>
+      {items.length ? (
+        items.map((item) => (
+          <div key={`${title}-${item.gene}`} className="delta-row">
+            <strong>{item.gene}</strong>
+            <span className={item.delta >= 0 ? "delta-positive" : "delta-negative"}>
+              {item.delta >= 0 ? "+" : ""}
+              {item.delta.toFixed(2)}
+            </span>
+            <small>
+              {item.value.toFixed(2)} vs {item.baseline.toFixed(2)}
+            </small>
+          </div>
+        ))
+      ) : (
+        <p className="quiet">{empty}</p>
+      )}
+    </div>
   );
 }
 
@@ -572,6 +659,88 @@ function MiniLedger({
 
 function creatureName(id: string, world: World): string {
   return world.creatures.find((creature) => creature.id === id)?.name ?? world.graveyard.find((creature) => creature.id === id)?.name ?? id;
+}
+
+function findCreatureRecord(id: string, world: World): { creature: Creature; status: "living" | "dead" } | undefined {
+  const living = world.creatures.find((creature) => creature.id === id);
+  if (living) return { creature: living, status: "living" };
+  const dead = world.graveyard.find((creature) => creature.id === id);
+  if (dead) return { creature: dead, status: "dead" };
+  return undefined;
+}
+
+function lineageRelatives(creature: Creature, world: World): Array<{ creature: Creature; role: string; status: "living" | "dead" }> {
+  const records = [
+    { creature, role: "selected", status: "living" as const },
+    ...creature.parentIds
+      .map((id) => findCreatureRecord(id, world))
+      .filter((record): record is { creature: Creature; status: "living" | "dead" } => Boolean(record))
+      .map((record) => ({ ...record, role: "parent" })),
+    ...creature.ancestorIds
+      .map((id) => findCreatureRecord(id, world))
+      .filter((record): record is { creature: Creature; status: "living" | "dead" } => Boolean(record))
+      .map((record) => ({ ...record, role: "ancestor" }))
+  ];
+  const seen = new Set<string>();
+
+  return records.filter((record) => {
+    if (seen.has(record.creature.id)) return false;
+    seen.add(record.creature.id);
+    return true;
+  }).slice(0, 7);
+}
+
+function averageGenomes(genomes: Genome[]): Genome | undefined {
+  if (genomes.length === 0) return undefined;
+  const totals: Genome = {
+    speed: 0,
+    vision: 0,
+    metabolism: 0,
+    fertility: 0,
+    aggression: 0,
+    sociality: 0,
+    foraging: 0,
+    immunity: 0,
+    heatTolerance: 0,
+    coldTolerance: 0,
+    predatorSense: 0,
+    migrationDrive: 0,
+    mutationRate: 0
+  };
+
+  for (const genome of genomes) {
+    for (const key of genomeKeys) {
+      totals[key] += genome[key];
+    }
+  }
+
+  return {
+    speed: totals.speed / genomes.length,
+    vision: totals.vision / genomes.length,
+    metabolism: totals.metabolism / genomes.length,
+    fertility: totals.fertility / genomes.length,
+    aggression: totals.aggression / genomes.length,
+    sociality: totals.sociality / genomes.length,
+    foraging: totals.foraging / genomes.length,
+    immunity: totals.immunity / genomes.length,
+    heatTolerance: totals.heatTolerance / genomes.length,
+    coldTolerance: totals.coldTolerance / genomes.length,
+    predatorSense: totals.predatorSense / genomes.length,
+    migrationDrive: totals.migrationDrive / genomes.length,
+    mutationRate: totals.mutationRate / genomes.length
+  };
+}
+
+function topGenomeDeltas(genome: Genome, baseline: Genome, count: number): Array<{ gene: keyof Genome; delta: number; value: number; baseline: number }> {
+  return genomeKeys
+    .map((gene) => ({
+      gene,
+      delta: genome[gene] - baseline[gene],
+      value: genome[gene],
+      baseline: baseline[gene]
+    }))
+    .sort((left, right) => Math.abs(right.delta) - Math.abs(left.delta))
+    .slice(0, count);
 }
 
 function cellFill(cell: World["cells"][number], mode: MapMode): string | undefined {
