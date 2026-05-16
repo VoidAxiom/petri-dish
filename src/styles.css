@@ -118,6 +118,82 @@ h2 {
   min-width: 0;
 }
 
+.map-toolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.map-mode-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.map-mode-buttons button {
+  min-height: 32px;
+  padding: 0 10px;
+  color: #aebdca;
+  text-transform: capitalize;
+}
+
+.map-mode-buttons button.active {
+  border-color: rgba(56, 189, 248, 0.9);
+  color: #e6edf3;
+  background: rgba(56, 189, 248, 0.14);
+}
+
+.map-legend {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-height: 32px;
+  color: #94a3b8;
+  font-size: 0.75rem;
+}
+
+.terrain-legend {
+  flex-wrap: wrap;
+}
+
+.terrain-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.terrain-legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.pressure-legend i {
+  width: 92px;
+  height: 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.pressure-legend-food i {
+  background: linear-gradient(90deg, hsl(42 68% 18%), hsl(124 68% 46%));
+}
+
+.pressure-legend-disease i {
+  background: linear-gradient(90deg, hsl(355 74% 13%), hsl(330 74% 55%));
+}
+
+.pressure-legend-predators i {
+  background: linear-gradient(90deg, hsl(35 82% 15%), hsl(7 82% 53%));
+}
+
+.pressure-legend-temperature i {
+  background: linear-gradient(90deg, hsl(210 72% 26%), hsl(30 72% 44%));
+}
+
 .world-map {
   width: 100%;
   aspect-ratio: 56 / 34;
@@ -130,26 +206,32 @@ h2 {
 
 .terrain-mire {
   fill: #166534;
+  background: #166534;
 }
 
 .terrain-steppe {
   fill: #5f6f32;
+  background: #5f6f32;
 }
 
 .terrain-reef {
   fill: #0f766e;
+  background: #0f766e;
 }
 
 .terrain-fungal {
   fill: #7c3aed;
+  background: #7c3aed;
 }
 
 .terrain-basalt {
   fill: #334155;
+  background: #334155;
 }
 
 .terrain-ice {
   fill: #7dd3fc;
+  background: #7dd3fc;
 }
 
 .event-strip {
@@ -495,6 +577,15 @@ h2 {
   }
 
   .control-row {
+    justify-content: flex-start;
+  }
+
+  .map-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .map-legend {
     justify-content: flex-start;
   }
 

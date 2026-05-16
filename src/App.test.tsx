@@ -11,6 +11,7 @@ describe("Petri Dish app", () => {
     expect(screen.getByText("Selected organism")).toBeTruthy();
     expect(screen.getByText("Dynasty")).toBeTruthy();
     expect(screen.getByText("World memory")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "disease" })).toBeTruthy();
     expect(screen.getByRole("img", { name: "Living simulation map" })).toBeTruthy();
   });
 
