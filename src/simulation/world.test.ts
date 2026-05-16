@@ -52,4 +52,20 @@ describe("deterministic world simulation", () => {
     expect(latest.averageFood).not.toBe(initialFood);
     expect(world.creatures.every((creature) => creature.speciesId.length > 0)).toBe(true);
   });
+
+  it("records causal birth events with ancestry and lineage references", () => {
+    let world = createWorld("lineage-ledger", { width: 24, height: 14, initialPopulation: 90 });
+
+    for (let index = 0; index < 80; index += 1) {
+      world = stepWorld(world);
+    }
+
+    const birthEvent = world.events.find((event) => event.kind === "birth");
+    const child = world.creatures.find((creature) => creature.parentIds.length > 0);
+
+    expect(birthEvent?.creatureId).toBeTruthy();
+    expect(birthEvent?.lineageId).toBeTruthy();
+    expect(birthEvent?.parentIds?.length).toBe(2);
+    expect(child?.ancestorIds.length).toBeGreaterThan(0);
+  });
 });
