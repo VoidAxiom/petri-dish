@@ -206,26 +206,32 @@ h2 {
 
 .terrain-mire {
   fill: #166534;
+  background: #166534;
 }
 
 .terrain-steppe {
   fill: #5f6f32;
+  background: #5f6f32;
 }
 
 .terrain-reef {
   fill: #0f766e;
+  background: #0f766e;
 }
 
 .terrain-fungal {
   fill: #7c3aed;
+  background: #7c3aed;
 }
 
 .terrain-basalt {
   fill: #334155;
+  background: #334155;
 }
 
 .terrain-ice {
   fill: #7dd3fc;
+  background: #7dd3fc;
 }
 
 .event-strip {
