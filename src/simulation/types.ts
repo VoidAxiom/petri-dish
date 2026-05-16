@@ -2,6 +2,8 @@ export type Biome = "mire" | "steppe" | "reef" | "fungal" | "basalt" | "ice";
 
 export type WorldEventKind = "drought" | "plague" | "ashfall" | "migration" | "bloom";
 
+export type SimulationEventKind = "birth" | "death" | "mutation" | "speciation" | "extinction" | "catastrophe";
+
 export interface TerrainCell {
   x: number;
   y: number;
@@ -92,6 +94,23 @@ export interface WorldEvent {
   startedAt: number;
 }
 
+export interface SimulationEvent {
+  id: string;
+  generation: number;
+  kind: SimulationEventKind;
+  message: string;
+  creatureId?: string;
+  speciesId?: string;
+  lineageId?: string;
+  parentIds?: string[];
+  cause?: string;
+  gene?: keyof Genome;
+  delta?: number;
+  eventKind?: WorldEventKind;
+  severity?: number;
+  population?: number;
+}
+
 export interface World {
   seed: string;
   width: number;
@@ -102,6 +121,7 @@ export interface World {
   graveyard: Creature[];
   summaries: GenerationSummary[];
   species: SpeciesSummary[];
+  events: SimulationEvent[];
   currentEvent?: WorldEvent;
   nextId: number;
 }
