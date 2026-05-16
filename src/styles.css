@@ -481,6 +481,111 @@ h2 {
   font-size: 0.88rem;
 }
 
+.lineage-lens {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(230, 237, 243, 0.1);
+}
+
+.lineage-lens-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.lineage-lens-heading strong,
+.family-node strong {
+  display: block;
+  color: #e2e8f0;
+  font-size: 0.86rem;
+}
+
+.lineage-lens-heading span {
+  color: #fde68a;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.family-thread {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.family-node {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid rgba(253, 230, 138, 0.18);
+  border-radius: 8px;
+  background: rgba(253, 230, 138, 0.055);
+}
+
+.family-node-dead {
+  border-color: rgba(148, 163, 184, 0.14);
+  background: rgba(148, 163, 184, 0.035);
+}
+
+.family-node span {
+  display: block;
+  overflow: hidden;
+  color: #94a3b8;
+  font-size: 0.74rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.genome-compare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.delta-list {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+}
+
+.delta-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 48px;
+  gap: 4px 8px;
+  align-items: center;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(230, 237, 243, 0.07);
+}
+
+.delta-row strong {
+  overflow: hidden;
+  color: #e2e8f0;
+  font-size: 0.76rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.delta-row span {
+  justify-self: end;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.delta-row small {
+  grid-column: 1 / -1;
+  color: #94a3b8;
+  font-size: 0.72rem;
+}
+
+.delta-positive {
+  color: #86efac;
+}
+
+.delta-negative {
+  color: #fca5a5;
+}
+
 .pressure-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -689,6 +794,8 @@ h2 {
   }
 
   .survival-summary,
+  .family-thread,
+  .genome-compare,
   .pressure-grid,
   .log-row {
     grid-template-columns: 1fr;

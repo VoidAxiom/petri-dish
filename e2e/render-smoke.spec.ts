@@ -14,6 +14,7 @@ test("renders a nonblank living lab and captures a screenshot", async ({ page },
   await expect(page.getByText("Survival pressures")).toBeVisible();
   await expect(page.getByLabel("Hunger pressure")).toBeVisible();
   await expect(page.getByText("Dynasty")).toBeVisible();
+  await expect(page.getByText("Lineage lens")).toBeVisible();
   await expect(page.getByText("World memory")).toBeVisible();
   await page.getByRole("button", { name: "disease" }).click();
   await expect(page.getByRole("button", { name: "disease" })).toHaveAttribute("aria-pressed", "true");
@@ -24,8 +25,10 @@ test("renders a nonblank living lab and captures a screenshot", async ({ page },
 
   const terrainTiles = await page.locator(".world-map rect").count();
   const renderedCreatures = await page.locator(".world-map circle").count();
+  const lineageMarkers = await page.locator(".world-map .lineage-marker").count();
   expect(terrainTiles).toBeGreaterThan(1_000);
   expect(renderedCreatures).toBeGreaterThan(80);
+  expect(lineageMarkers).toBeGreaterThan(0);
 
   const mapBox = await page.locator(".world-map").boundingBox();
   expect(mapBox?.width).toBeGreaterThan(600);
