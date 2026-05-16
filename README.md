@@ -35,6 +35,14 @@ Generate a deterministic long-horizon evidence report:
 npm run sim:report -- --seed mythic-lagoon-17 --generations 240
 ```
 
+Run browser render verification and capture a screenshot artifact:
+
+```bash
+npm run test:e2e
+```
+
+The screenshot is written to `artifacts/screenshots/petri-dish-living-map.png`. Set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` if Chrome is installed somewhere nonstandard.
+
 ## Design Principles
 
 - No fake demo stats. UI metrics must derive from simulation state.
