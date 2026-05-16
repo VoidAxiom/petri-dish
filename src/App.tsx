@@ -66,6 +66,16 @@ export default function App() {
     setSelectedId(nextWorld.creatures[0]?.id);
   }
 
+  function advanceEpoch() {
+    setWorld((current) => {
+      let next = current;
+      for (let index = 0; index < 50; index += 1) {
+        next = stepWorld(next);
+      }
+      return next;
+    });
+  }
+
   return (
     <main className="app-shell">
       <section className="topbar">
@@ -86,6 +96,9 @@ export default function App() {
           </button>
           <button type="button" onClick={() => setWorld((current) => stepWorld(current))}>
             Step
+          </button>
+          <button type="button" onClick={advanceEpoch}>
+            Epoch
           </button>
           <button type="button" onClick={() => reset()}>
             Reset

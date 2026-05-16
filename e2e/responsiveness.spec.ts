@@ -5,7 +5,16 @@ test("keeps controls responsive while the world is running", async ({ page }) =>
 
   const generationBadge = page.locator(".event-strip > div:first-child strong");
   await expect(generationBadge).toHaveText("Generation 0");
-  await expect(generationBadge).not.toHaveText("Generation 0", { timeout: 7_000 });
+  await page.getByRole("button", { name: "Pause" }).click({ timeout: 2_000 });
+  await expect(page.getByRole("button", { name: "Run" })).toBeVisible();
+
+  for (let index = 0; index < 6; index += 1) {
+    await page.getByRole("button", { name: "Epoch" }).click({ timeout: 3_000 });
+  }
+
+  await expect(generationBadge).toHaveText("Generation 300");
+  await page.getByRole("button", { name: "Run" }).click({ timeout: 2_000 });
+  await expect(generationBadge).not.toHaveText("Generation 300", { timeout: 7_000 });
 
   await page.getByRole("button", { name: "Pause" }).click({ timeout: 2_000 });
   await expect(page.getByRole("button", { name: "Run" })).toBeVisible();

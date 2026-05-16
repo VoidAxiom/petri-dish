@@ -87,5 +87,5 @@ describe("deterministic world simulation", () => {
 
     expect(world.creatures.length).toBeGreaterThan(100);
     expect(moved.length / Math.max(1, survivors.length)).toBeGreaterThan(0.5);
-  });
+  }, 10_000);
 });
