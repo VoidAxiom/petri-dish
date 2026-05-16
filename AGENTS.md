@@ -17,6 +17,28 @@ The product is the cool: a living map, colored clans/species, clickable creature
 - Do not fake simulation stats. UI metrics must come from deterministic world state.
 - Every meaningful change needs evidence: tests, typecheck, build, lint, screenshot, manual browser inspection, or CI/review status.
 
+## GitHub Review Gate
+
+Codex review is required for PRs to `main`, but `chatgpt-codex-connector`
+posts review comments rather than formal approving reviews and cannot be
+requested as a normal collaborator reviewer. Treat GitHub's conversation state
+as the Codex review gate.
+
+Before merging a PR:
+
+- Trigger Codex review with `@codex review` after the PR is ready.
+- Read Codex comments and inline review threads.
+- Fix actionable feedback locally on the PR branch.
+- Push the fix and request Codex re-review when the change is non-trivial.
+- Resolve each fixed Codex review conversation in GitHub.
+- Confirm CI is green with `gh pr checks`.
+- Confirm review threads are resolved and `mergeStateStatus` is `CLEAN`.
+
+Do not merge while GitHub reports unresolved conversations, failed checks, or a
+blocked merge state. A clean Codex comment such as "Didn't find any major
+issues" is acceptable review evidence only after any earlier Codex conversations
+on the PR have been fixed and resolved.
+
 ## Architecture Bias
 
 - Keep the simulation core framework-independent and deterministic.
