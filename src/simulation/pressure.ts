@@ -188,8 +188,6 @@ function reproductionStateFor(creature: Creature, population: number): { readine
 
   if (creature.energy < 0.78) blockers.push("needs more energy");
   if (creature.age < 4) blockers.push("juvenile");
-  if (creature.genome.fertility < 0.34) blockers.push("low fertility");
-  if (carryingRoom < 0.35) blockers.push("crowded biome");
 
   return { readiness, blockers };
 }

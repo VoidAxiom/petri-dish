@@ -83,9 +83,12 @@ describe("creature pressure explanations", () => {
   it("reports reproduction readiness from real age, energy, fertility, and crowding gates", () => {
     const ready = explainCreaturePressure(creature({ age: 9, energy: 1.1, genome: { ...genome, fertility: 0.8 } }), cell(), undefined, 120);
     const juvenile = explainCreaturePressure(creature({ age: 1, energy: 0.4, genome: { ...genome, fertility: 0.2 } }), cell(), undefined, 690);
+    const suppressedOdds = explainCreaturePressure(creature({ age: 9, energy: 1.1, genome: { ...genome, fertility: 0.1 } }), cell(), undefined, 710);
 
     expect(ready.reproductionReadiness).toBeGreaterThan(juvenile.reproductionReadiness);
+    expect(ready.reproductionReadiness).toBeGreaterThan(suppressedOdds.reproductionReadiness);
     expect(juvenile.reproductionBlockers).toContain("juvenile");
     expect(juvenile.reproductionBlockers).toContain("needs more energy");
+    expect(suppressedOdds.reproductionBlockers).toEqual([]);
   });
 });
