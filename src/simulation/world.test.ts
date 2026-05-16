@@ -68,4 +68,24 @@ describe("deterministic world simulation", () => {
     expect(birthEvent?.parentIds?.length).toBe(2);
     expect(child?.ancestorIds.length).toBeGreaterThan(0);
   });
+
+  it("keeps living agents moving in a long-running demo world", () => {
+    let world = createWorld("mythic-lagoon-17");
+
+    for (let index = 0; index < 450; index += 1) {
+      world = stepWorld(world);
+    }
+
+    const before = new Map(world.creatures.map((creature) => [creature.id, `${creature.x},${creature.y}`]));
+
+    for (let index = 0; index < 12; index += 1) {
+      world = stepWorld(world);
+    }
+
+    const survivors = world.creatures.filter((creature) => before.has(creature.id));
+    const moved = survivors.filter((creature) => before.get(creature.id) !== `${creature.x},${creature.y}`);
+
+    expect(world.creatures.length).toBeGreaterThan(100);
+    expect(moved.length / Math.max(1, survivors.length)).toBeGreaterThan(0.5);
+  }, 10_000);
 });

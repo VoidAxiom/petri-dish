@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   createWorld,
   explainCreaturePressure,
@@ -14,6 +14,7 @@ import {
 
 const demoSeeds = ["mythic-lagoon-17", "glass-drought-41", "ember-reef-93"];
 const mapModes = ["terrain", "food", "disease", "predators", "temperature"] as const;
+const simulationTickMs = 420;
 
 type MapMode = (typeof mapModes)[number];
 
@@ -24,6 +25,7 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string | undefined>(world.creatures[0]?.id);
   const [debug, setDebug] = useState(false);
   const [mapMode, setMapMode] = useState<MapMode>("terrain");
+  const lastFrameTick = useRef<number | undefined>(undefined);
   const selectedCreature = useMemo(
     () => world.creatures.find((creature) => creature.id === selectedId) ?? world.creatures[0],
     [selectedId, world.creatures]
@@ -32,14 +34,29 @@ export default function App() {
 
   useEffect(() => {
     if (!running) {
+      lastFrameTick.current = undefined;
       return;
     }
 
-    const timer = window.setInterval(() => {
-      setWorld((current) => stepWorld(current));
-    }, 420);
+    let frameId = 0;
+    const animate = (time: number) => {
+      if (lastFrameTick.current === undefined) {
+        lastFrameTick.current = time;
+      }
 
-    return () => window.clearInterval(timer);
+      if (time - lastFrameTick.current >= simulationTickMs) {
+        lastFrameTick.current = time;
+        setWorld((current) => stepWorld(current));
+      }
+      frameId = window.requestAnimationFrame(animate);
+    };
+
+    frameId = window.requestAnimationFrame(animate);
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      lastFrameTick.current = undefined;
+    };
   }, [running]);
 
   function reset(nextSeed = seed) {
@@ -47,6 +64,16 @@ export default function App() {
     setSeed(nextSeed);
     setWorld(nextWorld);
     setSelectedId(nextWorld.creatures[0]?.id);
+  }
+
+  function advanceEpoch() {
+    setWorld((current) => {
+      let next = current;
+      for (let index = 0; index < 50; index += 1) {
+        next = stepWorld(next);
+      }
+      return next;
+    });
   }
 
   return (
@@ -69,6 +96,9 @@ export default function App() {
           </button>
           <button type="button" onClick={() => setWorld((current) => stepWorld(current))}>
             Step
+          </button>
+          <button type="button" onClick={advanceEpoch}>
+            Epoch
           </button>
           <button type="button" onClick={() => reset()}>
             Reset
