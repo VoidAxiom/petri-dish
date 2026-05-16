@@ -8,6 +8,9 @@ test("renders a nonblank living lab and captures a screenshot", async ({ page },
   await expect(page.getByRole("heading", { name: "Petri Dish" })).toBeVisible();
   await expect(page.getByText("Dynasty")).toBeVisible();
   await expect(page.getByText("World memory")).toBeVisible();
+  await page.getByRole("button", { name: "disease" }).click();
+  await expect(page.getByRole("button", { name: "disease" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByLabel("disease legend")).toBeVisible();
 
   await page.getByRole("button", { name: "Pause" }).click();
   const generationBadge = page.locator(".event-strip > div:first-child strong");

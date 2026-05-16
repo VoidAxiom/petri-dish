@@ -2,6 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { createWorld, genomeKeys, speciesColor, stepWorld, type Creature, type Genome, type SimulationEvent, type World } from "./simulation";
 
 const demoSeeds = ["mythic-lagoon-17", "glass-drought-41", "ember-reef-93"];
+const mapModes = ["terrain", "food", "disease", "predators", "temperature"] as const;
+
+type MapMode = (typeof mapModes)[number];
 
 export default function App() {
   const [seed, setSeed] = useState(demoSeeds[0]);
@@ -9,6 +12,7 @@ export default function App() {
   const [running, setRunning] = useState(true);
   const [selectedId, setSelectedId] = useState<string | undefined>(world.creatures[0]?.id);
   const [debug, setDebug] = useState(false);
+  const [mapMode, setMapMode] = useState<MapMode>("terrain");
   const selectedCreature = useMemo(
     () => world.creatures.find((creature) => creature.id === selectedId) ?? world.creatures[0],
     [selectedId, world.creatures]
@@ -67,7 +71,23 @@ export default function App() {
 
       <section className="lab-grid">
         <div className="map-stage">
-          <WorldMap world={world} selectedId={selectedCreature?.id} debug={debug} onSelect={setSelectedId} />
+          <div className="map-toolbar" aria-label="Map mode">
+            <div className="map-mode-buttons">
+              {mapModes.map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  className={mode === mapMode ? "active" : ""}
+                  aria-pressed={mode === mapMode}
+                  onClick={() => setMapMode(mode)}
+                >
+                  {mode}
+                </button>
+              ))}
+            </div>
+            <MapLegend mode={mapMode} />
+          </div>
+          <WorldMap world={world} selectedId={selectedCreature?.id} debug={debug} mode={mapMode} onSelect={setSelectedId} />
           <div className="event-strip">
             <div>
               <strong>Generation {world.generation}</strong>
@@ -115,11 +135,13 @@ function WorldMap({
   world,
   selectedId,
   debug,
+  mode,
   onSelect
 }: {
   world: World;
   selectedId?: string;
   debug: boolean;
+  mode: MapMode;
   onSelect: (id: string) => void;
 }) {
   const viewBox = `0 0 ${world.width} ${world.height}`;
@@ -147,7 +169,8 @@ function WorldMap({
           width="1"
           height="1"
           className={`terrain terrain-${cell.biome}`}
-          opacity={0.54 + cell.food * 0.42}
+          style={{ fill: cellFill(cell, mode) }}
+          opacity={cellOpacity(cell, mode)}
         />
       ))}
       {debug &&
@@ -175,6 +198,36 @@ function WorldMap({
         />
       ))}
     </svg>
+  );
+}
+
+function MapLegend({ mode }: { mode: MapMode }) {
+  if (mode === "terrain") {
+    return (
+      <div className="map-legend terrain-legend" aria-label="Terrain legend">
+        {["mire", "steppe", "reef", "fungal", "basalt", "ice"].map((biome) => (
+          <span key={biome}>
+            <i className={`terrain-${biome}`} />
+            {biome}
+          </span>
+        ))}
+      </div>
+    );
+  }
+
+  const labels: Record<Exclude<MapMode, "terrain">, [string, string]> = {
+    food: ["scarce", "abundant"],
+    disease: ["clean", "infected"],
+    predators: ["safe", "hunted"],
+    temperature: ["cold", "hot"]
+  };
+
+  return (
+    <div className={`map-legend pressure-legend pressure-legend-${mode}`} aria-label={`${mode} legend`}>
+      <span>{labels[mode][0]}</span>
+      <i />
+      <span>{labels[mode][1]}</span>
+    </div>
   );
 }
 
@@ -470,6 +523,22 @@ function MiniLedger({
 
 function creatureName(id: string, world: World): string {
   return world.creatures.find((creature) => creature.id === id)?.name ?? world.graveyard.find((creature) => creature.id === id)?.name ?? id;
+}
+
+function cellFill(cell: World["cells"][number], mode: MapMode): string | undefined {
+  if (mode === "terrain") return undefined;
+  if (mode === "food") return `hsl(${42 + cell.food * 82} 68% ${18 + cell.food * 28}%)`;
+  if (mode === "disease") return `hsl(${355 - cell.disease * 25} 74% ${13 + cell.disease * 42}%)`;
+  if (mode === "predators") return `hsl(${35 - cell.predatorPressure * 28} 82% ${15 + cell.predatorPressure * 38}%)`;
+  return `hsl(${210 - cell.temperature * 180} 72% ${26 + cell.temperature * 18}%)`;
+}
+
+function cellOpacity(cell: World["cells"][number], mode: MapMode): number {
+  if (mode === "terrain") return 0.54 + cell.food * 0.42;
+  if (mode === "food") return 0.56 + cell.food * 0.42;
+  if (mode === "disease") return 0.5 + cell.disease * 0.48;
+  if (mode === "predators") return 0.5 + cell.predatorPressure * 0.48;
+  return 0.74;
 }
 
 function eventColor(kind: SimulationEvent["kind"]): string {
