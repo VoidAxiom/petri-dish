@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "preview": "vite preview --host 127.0.0.1",
     "sim:report": "tsx scripts/sim-report.ts",
+    "sim:report:smoke": "npm run sim:report -- --seed mythic-lagoon-17 --generations 120 --width 24 --height 14 --population 80",
     "typecheck": "tsc --noEmit --pretty false",
     "test": "vitest run",
     "test:watch": "vitest"
