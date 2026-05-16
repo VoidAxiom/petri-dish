@@ -398,6 +398,7 @@ function drawWorldMap(
 
   if (mode === "terrain") {
     drawCachedTerrainLayer(context, terrainCanvasCache, canvasSize, world, pixelRatio, cellWidth, cellHeight);
+    drawTerrainVitalityLayer(context, world, cellWidth, cellHeight);
   } else {
     for (const cell of world.cells) {
       context.globalAlpha = cellOpacity(cell, mode);
@@ -434,6 +435,18 @@ function drawWorldMap(
     );
     context.fill();
     context.stroke();
+  }
+
+  context.globalAlpha = 1;
+}
+
+function drawTerrainVitalityLayer(context: CanvasRenderingContext2D, world: World, cellWidth: number, cellHeight: number): void {
+  for (const cell of world.cells) {
+    const stress = Math.max(cell.disease * 0.5, cell.predatorPressure * 0.42);
+    const foodGlow = cell.food * 0.22;
+    context.globalAlpha = Math.max(0.06, foodGlow + stress);
+    context.fillStyle = stress > foodGlow ? "rgba(239, 68, 68, 0.42)" : "rgba(132, 204, 22, 0.34)";
+    context.fillRect(cell.x * cellWidth, cell.y * cellHeight, cellWidth + 0.35, cellHeight + 0.35);
   }
 
   context.globalAlpha = 1;

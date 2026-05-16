@@ -27,6 +27,35 @@ test("keeps controls responsive while the world is running", async ({ page }, te
   await page.waitForTimeout(1_000);
   await expect(generationBadge).toHaveText(pausedGeneration ?? "");
 
+  const terrainSignature = await page.locator("canvas.world-map").evaluate((element) => {
+    const canvas = element as HTMLCanvasElement;
+    const context = canvas.getContext("2d");
+    if (!context) return "";
+
+    const image = context.getImageData(0, 0, canvas.width, canvas.height);
+    const components: number[] = [];
+    const step = Math.max(4, Math.floor(image.data.length / 4 / 64) * 4);
+    for (let index = 0; index < image.data.length; index += step) {
+      components.push(image.data[index], image.data[index + 1], image.data[index + 2], image.data[index + 3]);
+    }
+    return components.join("-");
+  });
+  await page.getByRole("button", { name: "Step" }).click({ timeout: 2_000 });
+  const nextTerrainSignature = await page.locator("canvas.world-map").evaluate((element) => {
+    const canvas = element as HTMLCanvasElement;
+    const context = canvas.getContext("2d");
+    if (!context) return "";
+
+    const image = context.getImageData(0, 0, canvas.width, canvas.height);
+    const components: number[] = [];
+    const step = Math.max(4, Math.floor(image.data.length / 4 / 64) * 4);
+    for (let index = 0; index < image.data.length; index += step) {
+      components.push(image.data[index], image.data[index + 1], image.data[index + 2], image.data[index + 3]);
+    }
+    return components.join("-");
+  });
+  expect(nextTerrainSignature).not.toBe(terrainSignature);
+
   const renderBudget = await page.locator("canvas.world-map").evaluate((canvas) => ({
     terrainCells: Number(canvas.dataset.terrainCells),
     renderedCreatures: Number(canvas.dataset.creaturesRendered),
