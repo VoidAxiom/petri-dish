@@ -14,9 +14,9 @@ test("keeps controls responsive while the world is running", async ({ page }, te
 
   for (let index = 0; index < 6; index += 1) {
     await page.getByRole("button", { name: "Epoch" }).click({ timeout: 3_000 });
+    await expect(generationBadge).toHaveText(`Generation ${(index + 1) * 50}`, { timeout: 8_000 });
   }
 
-  await expect(generationBadge).toHaveText("Generation 300");
   await page.getByRole("button", { name: "Run" }).click({ timeout: 2_000 });
   await expect(generationBadge).not.toHaveText("Generation 300", { timeout: 7_000 });
 
@@ -26,6 +26,19 @@ test("keeps controls responsive while the world is running", async ({ page }, te
 
   await page.waitForTimeout(1_000);
   await expect(generationBadge).toHaveText(pausedGeneration ?? "");
+
+  const renderBudget = await page.locator("canvas.world-map").evaluate((canvas) => ({
+    terrainCells: Number(canvas.dataset.terrainCells),
+    renderedCreatures: Number(canvas.dataset.creaturesRendered),
+    selectedLineageCount: Number(canvas.dataset.selectedLineageCount),
+    svgMapNodes: document.querySelectorAll(".world-map rect, .world-map circle").length,
+    totalDomNodes: document.querySelectorAll("*").length
+  }));
+  expect(renderBudget.terrainCells).toBeGreaterThan(1_000);
+  expect(renderBudget.renderedCreatures).toBeGreaterThan(100);
+  expect(renderBudget.selectedLineageCount).toBeGreaterThan(0);
+  expect(renderBudget.svgMapNodes).toBe(0);
+  expect(renderBudget.totalDomNodes).toBeLessThan(850);
 
   const horizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(horizontalOverflow).toBeLessThanOrEqual(2);
