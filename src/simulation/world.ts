@@ -67,7 +67,7 @@ export function createWorld(seed: string, options: WorldOptions = {}): World {
     nextId: initialPopulation + 1
   };
 
-  world.species = buildSpeciesSummaries(world.creatures, world.cells, []);
+  world.species = buildSpeciesSummaries(world.creatures, world.cells, world.width, []);
   world.summaries = [summarize(world, 0, 0, [])];
 
   return world;
@@ -125,7 +125,7 @@ export function stepWorld(input: World): World {
   world.graveyard = [...world.graveyard, ...deaths].slice(-900);
 
   const previousSpecies = new Map(world.species.map((item) => [item.id, item]));
-  world.species = buildSpeciesSummaries(world.creatures, world.cells, world.species);
+  world.species = buildSpeciesSummaries(world.creatures, world.cells, world.width, world.species);
   const extinctions = [...previousSpecies.keys()].filter((id) => !world.species.some((item) => item.id === id));
 
   for (const species of world.species) {

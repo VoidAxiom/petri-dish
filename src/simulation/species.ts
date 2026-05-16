@@ -91,7 +91,7 @@ export function averageGenome(creatures: Creature[]): Genome {
   };
 }
 
-export function buildSpeciesSummaries(creatures: Creature[], cells: TerrainCell[], previous: SpeciesSummary[]): SpeciesSummary[] {
+export function buildSpeciesSummaries(creatures: Creature[], cells: TerrainCell[], width: number, previous: SpeciesSummary[]): SpeciesSummary[] {
   const previousStats = new Map(previous.map((item) => [item.id, item]));
   const grouped = new Map<string, Creature[]>();
 
@@ -105,7 +105,7 @@ export function buildSpeciesSummaries(creatures: Creature[], cells: TerrainCell[
     .map(([id, members]) => {
       const biomeCounts = new Map<string, number>();
       for (const member of members) {
-        const cell = cells[member.y * Math.max(1, Math.sqrt(cells.length)) + member.x];
+        const cell = cells[member.y * width + member.x];
         if (cell) {
           biomeCounts.set(cell.biome, (biomeCounts.get(cell.biome) ?? 0) + 1);
         }
