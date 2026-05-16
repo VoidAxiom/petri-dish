@@ -9,6 +9,8 @@ describe("Petri Dish app", () => {
     expect(screen.getByRole("heading", { name: "Petri Dish" })).toBeTruthy();
     expect(screen.getByText("living agents")).toBeTruthy();
     expect(screen.getByText("Selected organism")).toBeTruthy();
+    expect(screen.getByText("Survival pressures")).toBeTruthy();
+    expect(screen.getByText("Reproduction readiness")).toBeTruthy();
     expect(screen.getByText("Dynasty")).toBeTruthy();
     expect(screen.getByText("World memory")).toBeTruthy();
     expect(screen.getByRole("button", { name: "disease" })).toBeTruthy();

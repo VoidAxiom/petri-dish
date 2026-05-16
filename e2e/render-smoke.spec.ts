@@ -11,6 +11,8 @@ test("renders a nonblank living lab and captures a screenshot", async ({ page },
   await expect(generationBadge).toHaveText("Generation 0");
 
   await expect(page.getByRole("heading", { name: "Petri Dish" })).toBeVisible();
+  await expect(page.getByText("Survival pressures")).toBeVisible();
+  await expect(page.getByLabel("Hunger pressure")).toBeVisible();
   await expect(page.getByText("Dynasty")).toBeVisible();
   await expect(page.getByText("World memory")).toBeVisible();
   await page.getByRole("button", { name: "disease" }).click();
@@ -28,6 +30,8 @@ test("renders a nonblank living lab and captures a screenshot", async ({ page },
   const mapBox = await page.locator(".world-map").boundingBox();
   expect(mapBox?.width).toBeGreaterThan(600);
   expect(mapBox?.height).toBeGreaterThan(300);
+  const horizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(horizontalOverflow).toBeLessThanOrEqual(2);
 
   const screenshotDir = path.join(process.cwd(), "artifacts", "screenshots");
   await mkdir(screenshotDir, { recursive: true });

@@ -1,5 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
-import { createWorld, genomeKeys, speciesColor, stepWorld, type Creature, type Genome, type SimulationEvent, type World } from "./simulation";
+import {
+  createWorld,
+  explainCreaturePressure,
+  genomeKeys,
+  speciesColor,
+  stepWorld,
+  type Creature,
+  type CreaturePressureReport,
+  type Genome,
+  type SimulationEvent,
+  type World
+} from "./simulation";
 
 const demoSeeds = ["mythic-lagoon-17", "glass-drought-41", "ember-reef-93"];
 const mapModes = ["terrain", "food", "disease", "predators", "temperature"] as const;
@@ -237,6 +248,7 @@ function CreatureInspector({ creature, world }: { creature?: Creature; world: Wo
   }
 
   const cell = world.cells[creature.y * world.width + creature.x];
+  const pressure = explainCreaturePressure(creature, cell, world.currentEvent, world.creatures.length);
 
   return (
     <section className="panel inspector">
@@ -257,6 +269,7 @@ function CreatureInspector({ creature, world }: { creature?: Creature; world: Wo
         <Fact label="Biome" value={cell.biome} />
         <Fact label="Lineage" value={creature.lineageId} />
       </div>
+      <SurvivalPressurePanel pressure={pressure} />
       <GenomeBars genome={creature.genome} />
       <div className="ancestry">
         <p className="eyebrow">Ancestry</p>
@@ -264,6 +277,42 @@ function CreatureInspector({ creature, world }: { creature?: Creature; world: Wo
         <p>{creature.mutations.length ? `${creature.mutations.length} mutations in this genome` : "no recorded mutations"}</p>
       </div>
     </section>
+  );
+}
+
+function SurvivalPressurePanel({ pressure }: { pressure: CreaturePressureReport }) {
+  return (
+    <div className="survival-pressure">
+      <div className="survival-heading">
+        <div>
+          <p className="eyebrow">Survival pressures</p>
+          <strong>Primary risk: {pressure.primaryRisk}</strong>
+        </div>
+        <span>fitness {pressure.estimatedFitness.toFixed(2)}</span>
+      </div>
+      <div className="survival-summary">
+        <Fact label="Projected energy" value={pressure.projectedEnergy.toFixed(2)} />
+        <Fact label="Stress cost" value={pressure.costs.total.toFixed(2)} />
+        <Fact label="Breed ready" value={`${Math.round(pressure.reproductionReadiness * 100)}%`} />
+      </div>
+      <div className="pressure-list">
+        {pressure.metrics.map((metric) => (
+          <div key={metric.kind} className={`pressure-row pressure-row-${metric.kind}`}>
+            <div className="pressure-row-top">
+              <strong>{metric.label}</strong>
+              <span>{Math.round(metric.value * 100)}%</span>
+            </div>
+            <div className="pressure-bar" aria-label={`${metric.label} pressure`}>
+              <i style={{ width: `${Math.round(metric.value * 100)}%` }} />
+            </div>
+            <p>{metric.detail}</p>
+            <small>
+              {metric.trait}: {metric.traitValue.toFixed(2)}
+            </small>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
