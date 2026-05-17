@@ -29,6 +29,14 @@ export interface PersistedRunPayload {
   };
 }
 
+export type PersistedRunInput = {
+  world: World;
+  snapshots: GenerationSnapshot[];
+  selectedCreatureId?: string;
+  replayGeneration?: number;
+  savedAt?: string;
+};
+
 export type PersistedRunLoadResult =
   | { status: "missing"; key: string }
   | { status: "loaded"; key: string; payload: PersistedRunPayload; bytes: number }
@@ -48,13 +56,7 @@ export function createPersistedRunPayload({
   selectedCreatureId,
   replayGeneration,
   savedAt = new Date().toISOString()
-}: {
-  world: World;
-  snapshots: GenerationSnapshot[];
-  selectedCreatureId?: string;
-  replayGeneration?: number;
-  savedAt?: string;
-}): PersistedRunPayload {
+}: PersistedRunInput): PersistedRunPayload {
   return cloneJson({
     schema: persistedRunSchema,
     version: persistedRunVersion,
@@ -75,7 +77,7 @@ export function createPersistedRunPayload({
 
 export function savePersistedRun(
   storage: PersistenceStorage,
-  input: Parameters<typeof createPersistedRunPayload>[0],
+  input: PersistedRunInput,
   key = defaultPersistedRunKey
 ): PersistedRunSaveResult {
   try {
@@ -111,25 +113,33 @@ export function loadPersistedRun(storage: PersistenceStorage, key = defaultPersi
     return { status: "invalid", key, reason: "invalid-json", error };
   }
 
-  if (!isRecord(parsed)) {
+  return loadPersistedRunPayload(parsed, key, serialized);
+}
+
+export function loadPersistedRunPayload(value: unknown, key = defaultPersistedRunKey, serialized?: string): PersistedRunLoadResult {
+  if (!isRecord(value)) {
     return { status: "invalid", key, reason: "payload-not-object" };
   }
 
-  if (parsed.schema !== persistedRunSchema || parsed.version !== persistedRunVersion) {
+  if (value.schema !== persistedRunSchema || value.version !== persistedRunVersion) {
     return {
       status: "unsupported",
       key,
       reason: "unsupported-schema-version",
-      schema: parsed.schema,
-      version: parsed.version
+      schema: value.schema,
+      version: value.version
     };
   }
 
-  if (!isPersistedRunPayload(parsed)) {
+  if (!isPersistedRunPayload(value)) {
     return { status: "invalid", key, reason: "payload-shape-invalid" };
   }
 
-  return { status: "loaded", key, payload: parsed, bytes: byteLength(serialized) };
+  return { status: "loaded", key, payload: value, bytes: serialized ? byteLength(serialized) : measurePersistedRunPayload(value) };
+}
+
+export function measurePersistedRunPayload(payload: PersistedRunPayload): number {
+  return byteLength(JSON.stringify(payload));
 }
 
 export function clearPersistedRun(storage: PersistenceStorage, key = defaultPersistedRunKey): PersistedRunClearResult {

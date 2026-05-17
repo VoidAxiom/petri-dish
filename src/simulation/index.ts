@@ -9,6 +9,8 @@ export {
   createPersistedRunPayload,
   defaultPersistedRunKey,
   loadPersistedRun,
+  loadPersistedRunPayload,
+  measurePersistedRunPayload,
   persistedRunSchema,
   persistedRunVersion,
   savePersistedRun
@@ -27,6 +29,13 @@ export type { CreaturePressureMetric, CreaturePressureReport } from "./pressure"
 export type { EventImpactReport, ImpactMetricDelta } from "./impact";
 export type { LineageAtlasEntry } from "./lineage";
 export type { OfflineCatchUpPlan } from "./offline";
-export type { PersistedRunClearResult, PersistedRunLoadResult, PersistedRunPayload, PersistedRunSaveResult, PersistenceStorage } from "./persistence";
+export type {
+  PersistedRunClearResult,
+  PersistedRunInput,
+  PersistedRunLoadResult,
+  PersistedRunPayload,
+  PersistedRunSaveResult,
+  PersistenceStorage
+} from "./persistence";
 export type { GenerationSnapshot } from "./snapshots";
 export type { Creature, GenerationSummary, Genome, SimulationEvent, SpeciesSummary, TerrainCell, World } from "./types";

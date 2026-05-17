@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 import App from "./App";
 import {
@@ -21,7 +21,7 @@ describe("Petri Dish app", () => {
     });
   });
 
-  it("renders the living lab dashboard from simulation state", () => {
+  it("renders the living lab dashboard from simulation state", async () => {
     render(<App />);
 
     expect(screen.getByRole("heading", { name: "Petri Dish" })).toBeTruthy();
@@ -40,22 +40,25 @@ describe("Petri Dish app", () => {
     expect(screen.getByTestId("snapshot-generation").textContent).toBe("Live");
     expect(screen.getByRole("button", { name: "disease" })).toBeTruthy();
     expect(screen.getByRole("img", { name: "Living simulation map" })).toBeTruthy();
+    await waitFor(() => expect(screen.getByTestId("persistence-status").getAttribute("data-status")).toBe("saved"));
   });
 
-  it("advances the generation when stepped manually", () => {
+  it("advances the generation when stepped manually", async () => {
     render(<App />);
 
     fireEvent.click(screen.getByRole("button", { name: "Pause" }));
     expect(screen.getByTestId("display-generation").textContent).toBe("Generation 0");
+    await waitFor(() => expect(screen.getByTestId("persistence-status").getAttribute("data-status")).toBe("saved"));
 
     fireEvent.click(screen.getByRole("button", { name: "Step" }));
     expect(screen.getByTestId("display-generation").textContent).toBe("Generation 1");
   });
 
-  it("selects a lineage atlas representative", () => {
+  it("selects a lineage atlas representative", async () => {
     render(<App />);
 
     fireEvent.click(screen.getByRole("button", { name: "Pause" }));
+    await waitFor(() => expect(screen.getByTestId("persistence-status").getAttribute("data-status")).toBe("saved"));
     const row = screen.getAllByTestId("lineage-atlas-row").find((item) => !item.hasAttribute("disabled"))!;
     const lineageId = row.getAttribute("data-lineage-id");
     expect(Number(row.getAttribute("data-living"))).toBeGreaterThan(0);
@@ -89,7 +92,7 @@ describe("Petri Dish app", () => {
     expect(screen.getByTestId("creature-inspector").getAttribute("data-creature-id")).toBe(selectedCreatureId);
   });
 
-  it("catches up a restored local world from elapsed saved time", () => {
+  it("catches up a restored local world from elapsed saved time", async () => {
     const world = runWorld("glass-drought-41", 12, persistenceTestConfig);
     const snapshots = buildGenerationSnapshots("glass-drought-41", 12, persistenceTestConfig, 6);
     const savedAt = new Date(Date.now() - offlineCatchUpMsPerGeneration * 3).toISOString();
@@ -103,9 +106,10 @@ describe("Petri Dish app", () => {
     expect(screen.getByTestId("persistence-status").getAttribute("data-generation")).toBe("15");
     expect(screen.getByTestId("persistence-status").getAttribute("data-catch-up-generations")).toBe("3");
     expect(screen.getByText(/caught up 3g/)).toBeTruthy();
+    await waitFor(() => expect(screen.getByTestId("persistence-status").getAttribute("data-status")).toBe("saved"));
   });
 
-  it("caps restored local world catch-up for long absences", () => {
+  it("caps restored local world catch-up for long absences", async () => {
     const world = runWorld("glass-drought-41", 12, persistenceTestConfig);
     const snapshots = buildGenerationSnapshots("glass-drought-41", 12, persistenceTestConfig, 6);
     const savedAt = new Date(Date.now() - offlineCatchUpMsPerGeneration * (maxOfflineCatchUpGenerations + 20)).toISOString();
@@ -119,9 +123,10 @@ describe("Petri Dish app", () => {
     expect(screen.getByTestId("persistence-status").getAttribute("data-catch-up-generations")).toBe(String(maxOfflineCatchUpGenerations));
     expect(screen.getByTestId("persistence-status").getAttribute("data-catch-up-capped")).toBe("true");
     expect(screen.getByText(/caught up 60g capped/)).toBeTruthy();
+    await waitFor(() => expect(screen.getByTestId("persistence-status").getAttribute("data-status")).toBe("saved"));
   });
 
-  it("keeps corrupt local saves visible until the user clears them", () => {
+  it("keeps corrupt local saves visible until the user clears them", async () => {
     window.localStorage.setItem(defaultPersistedRunKey, "{not-json");
 
     render(<App />);
@@ -133,23 +138,27 @@ describe("Petri Dish app", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Clear save" }));
 
-    expect(screen.getByTestId("persistence-status").getAttribute("data-status")).toBe("cleared");
-    expect(screen.getByTestId("persistence-status").getAttribute("data-autosave")).toBe("paused");
-    expect(loadPersistedRun(window.localStorage).status).toBe("missing");
+    await waitFor(() => {
+      expect(screen.getByTestId("persistence-status").getAttribute("data-status")).toBe("cleared");
+      expect(screen.getByTestId("persistence-status").getAttribute("data-autosave")).toBe("paused");
+      expect(loadPersistedRun(window.localStorage).status).toBe("missing");
+    });
   });
 
-  it("clears and resumes local saving intentionally", () => {
+  it("clears and resumes local saving intentionally", async () => {
     render(<App />);
     fireEvent.click(screen.getByRole("button", { name: "Pause" }));
 
-    expect(loadPersistedRun(window.localStorage).status).toBe("loaded");
+    await waitFor(() => expect(loadPersistedRun(window.localStorage).status).toBe("loaded"));
 
     fireEvent.click(screen.getByRole("button", { name: "Clear save" }));
-    expect(loadPersistedRun(window.localStorage).status).toBe("missing");
+    await waitFor(() => expect(loadPersistedRun(window.localStorage).status).toBe("missing"));
 
     fireEvent.click(screen.getByRole("button", { name: "Save now" }));
-    expect(loadPersistedRun(window.localStorage).status).toBe("loaded");
-    expect(screen.getByTestId("persistence-status").getAttribute("data-status")).toBe("saved");
+    await waitFor(() => {
+      expect(loadPersistedRun(window.localStorage).status).toBe("loaded");
+      expect(screen.getByTestId("persistence-status").getAttribute("data-status")).toBe("saved");
+    });
   });
 });
 
