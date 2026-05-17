@@ -1,9 +1,14 @@
 import { memo, useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import {
+  createDefaultBrowserPersistedRunStore,
+  type BrowserPersistedRunLoadResult,
+  type BrowserRunStorageBackend,
+  type StorageHealth
+} from "./persistence/browserRunStore";
+import {
   applyOfflineCatchUp,
   buildEventImpactReports,
   buildLineageAtlas,
-  clearPersistedRun,
   createWorld,
   createGenerationSnapshot,
   defaultSnapshotInterval,
@@ -12,7 +17,6 @@ import {
   nearestGenerationSnapshot,
   genomeKeys,
   planOfflineCatchUp,
-  savePersistedRun,
   selectLineageRepresentative,
   snapshotWorld,
   speciesColor,
@@ -25,7 +29,6 @@ import {
   type Genome,
   type LineageAtlasEntry,
   type OfflineCatchUpPlan,
-  type PersistenceStorage,
   type SimulationEvent,
   type TerrainCell,
   type World
@@ -53,10 +56,13 @@ type CanvasSize = { width: number; height: number };
 type CreatureRecord = { creature: Creature; status: "living" | "dead" };
 type TerrainCanvasCache = { key: string; canvas: HTMLCanvasElement };
 type PersistenceUiState = {
-  status: "fresh" | "restored" | "saved" | "cleared" | "unavailable" | "invalid" | "unsupported" | "error";
+  status: "loading" | "fresh" | "restored" | "saved" | "cleared" | "unavailable" | "invalid" | "unsupported" | "error";
   savedAt?: string;
   generation?: number;
   bytes?: number;
+  manifestBytes?: number;
+  backend?: BrowserRunStorageBackend;
+  storageHealth?: StorageHealth;
   reason?: string;
   catchUp?: OfflineCatchUpPlan;
 };
@@ -69,6 +75,7 @@ type InitialRunState = {
   replayGeneration?: number;
   persistence: PersistenceUiState;
   autosaveEnabled: boolean;
+  running: boolean;
   persistedSignature?: string;
   persistOnLoad?: boolean;
 };
@@ -81,12 +88,20 @@ type WorldIndex = {
 };
 
 function loadInitialRunState(): InitialRunState {
-  const storage = browserPersistenceStorage();
+  if (browserHasIndexedDb()) {
+    return createFreshInitialRun({ status: "loading", reason: "opening-local-run", backend: "indexeddb" }, false, false);
+  }
+
+  const storage = browserLocalStorage();
   if (!storage) {
     return createFreshInitialRun({ status: "unavailable", reason: "local-storage-unavailable" }, false);
   }
 
-  const result = loadPersistedRun(storage);
+  const result: BrowserPersistedRunLoadResult = { ...loadPersistedRun(storage), backend: "local-storage" };
+  return initialRunFromLoadResult(result, false);
+}
+
+function initialRunFromLoadResult(result: BrowserPersistedRunLoadResult, persistOnLoadAfterRestore: boolean): InitialRunState {
   if (result.status === "loaded") {
     const payload = result.payload;
     const catchUp = planOfflineCatchUp(payload.savedAt);
@@ -103,28 +118,38 @@ function loadInitialRunState(): InitialRunState {
       snapshots: restoredSnapshots,
       selectedId,
       replayGeneration,
-      persistence: { status: "restored", savedAt: payload.savedAt, generation: restoredWorld.generation, bytes: result.bytes, catchUp },
+      persistence: {
+        status: "restored",
+        savedAt: payload.savedAt,
+        generation: restoredWorld.generation,
+        bytes: result.bytes,
+        manifestBytes: result.manifestBytes,
+        backend: result.backend,
+        storageHealth: result.storageHealth,
+        catchUp
+      },
       autosaveEnabled: true,
+      running: true,
       persistedSignature:
-        catchUp.generations > 0
+        catchUp.generations > 0 || persistOnLoadAfterRestore
           ? undefined
           : persistedRunSignature(restoredWorld, snapshotsForPersistence(restoredWorld, restoredSnapshots, replayGeneration), selectedId, replayGeneration),
-      persistOnLoad: catchUp.generations > 0
+      persistOnLoad: catchUp.generations > 0 || persistOnLoadAfterRestore
     };
   }
 
   if (result.status === "missing") {
-    return createFreshInitialRun({ status: "fresh" }, true);
+    return createFreshInitialRun({ status: "fresh", backend: result.backend }, true);
   }
 
   if (result.status === "unsupported") {
-    return createFreshInitialRun({ status: "unsupported", reason: result.reason }, false);
+    return createFreshInitialRun({ status: "unsupported", reason: result.reason, backend: result.backend }, false);
   }
 
-  return createFreshInitialRun({ status: result.status, reason: result.reason }, false);
+  return createFreshInitialRun({ status: result.status, reason: result.reason, backend: result.backend }, false);
 }
 
-function createFreshInitialRun(persistence: PersistenceUiState, autosaveEnabled: boolean): InitialRunState {
+function createFreshInitialRun(persistence: PersistenceUiState, autosaveEnabled: boolean, running = true): InitialRunState {
   const world = createWorld(demoSeeds[0]);
   return {
     seed: world.seed,
@@ -133,16 +158,26 @@ function createFreshInitialRun(persistence: PersistenceUiState, autosaveEnabled:
     snapshots: [createGenerationSnapshot(world)],
     selectedId: world.creatures[0]?.id,
     persistence,
-    autosaveEnabled
+    autosaveEnabled,
+    running
   };
 }
 
-function browserPersistenceStorage(): PersistenceStorage | undefined {
+function browserLocalStorage() {
   if (typeof window === "undefined") return undefined;
   try {
     return window.localStorage;
   } catch {
     return undefined;
+  }
+}
+
+function browserHasIndexedDb(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return Boolean(window.indexedDB);
+  } catch {
+    return false;
   }
 }
 
@@ -186,10 +221,10 @@ function restoreSnapshotsForRun(snapshots: GenerationSnapshot[], world: World): 
 
 export default function App() {
   const [initialRun] = useState(loadInitialRunState);
-  const persistenceStorage = useMemo(browserPersistenceStorage, []);
+  const persistenceStore = useMemo(createDefaultBrowserPersistedRunStore, []);
   const [seed, setSeed] = useState(initialRun.seed);
   const [world, setWorld] = useState(initialRun.world);
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useState(initialRun.running);
   const [selectedId, setSelectedId] = useState<string | undefined>(initialRun.selectedId);
   const [debug, setDebug] = useState(false);
   const [mapMode, setMapMode] = useState<MapMode>("terrain");
@@ -201,6 +236,8 @@ export default function App() {
   const [autosaveEnabled, setAutosaveEnabled] = useState(initialRun.autosaveEnabled);
   const lastFrameTick = useRef<number | undefined>(undefined);
   const epochRunId = useRef(0);
+  const persistenceRequestId = useRef(0);
+  const persistenceWriteChain = useRef<Promise<unknown>>(Promise.resolve());
   const lastPersistedSignature = useRef<string | undefined>(initialRun.persistedSignature);
   const persistOnLoad = useRef(initialRun.persistOnLoad ?? false);
   const replaySnapshot = useMemo(
@@ -223,6 +260,26 @@ export default function App() {
   );
   const selectedLineageCount = selectedCreature ? (viewWorldIndex.livingByLineage.get(selectedCreature.lineageId)?.length ?? 0) : 0;
   const latest = viewWorld.summaries.at(-1)!;
+
+  useEffect(() => {
+    if (persistence.status !== "loading") return;
+    if (!persistenceStore) {
+      applyRunState(createFreshInitialRun({ status: "unavailable", reason: "browser-storage-unavailable" }, false));
+      return;
+    }
+
+    let cancelled = false;
+    const requestId = ++persistenceRequestId.current;
+    persistenceStore.load().then((result) => {
+      if (cancelled || requestId !== persistenceRequestId.current) return;
+      const shouldMigrateToIndexedDb = result.status === "loaded" && result.backend === "local-storage" && persistenceStore.preferredBackend === "indexeddb";
+      applyRunState(initialRunFromLoadResult(result, shouldMigrateToIndexedDb));
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [persistence.status, persistenceStore]);
 
   useEffect(() => {
     if (!running) {
@@ -360,9 +417,9 @@ export default function App() {
     nextReplayGeneration?: number,
     catchUp?: OfflineCatchUpPlan
   ) {
-    if (!persistenceStorage) {
+    if (!persistenceStore) {
       setAutosaveEnabled(false);
-      setPersistence({ status: "unavailable", reason: "local-storage-unavailable" });
+      setPersistence({ status: "unavailable", reason: "browser-storage-unavailable" });
       return;
     }
 
@@ -372,43 +429,90 @@ export default function App() {
       return;
     }
 
-    const result = savePersistedRun(persistenceStorage, {
-      world: nextWorld,
-      snapshots: persistedSnapshots,
-      selectedCreatureId: nextSelectedId,
-      replayGeneration: nextReplayGeneration
+    const requestId = ++persistenceRequestId.current;
+    enqueuePersistenceWrite(() =>
+      persistenceStore.save({
+        world: nextWorld,
+        snapshots: persistedSnapshots,
+        selectedCreatureId: nextSelectedId,
+        replayGeneration: nextReplayGeneration
+      })
+    ).then((result) => {
+      if (requestId !== persistenceRequestId.current) return;
+
+      if (result.status === "saved") {
+        lastPersistedSignature.current = signature;
+        setPersistence({
+          status: "saved",
+          savedAt: result.savedAt,
+          generation: nextWorld.generation,
+          bytes: result.bytes,
+          manifestBytes: result.manifestBytes,
+          backend: result.backend,
+          storageHealth: result.storageHealth,
+          catchUp
+        });
+        return;
+      }
+
+      setAutosaveEnabled(false);
+      setPersistence({
+        status: "error",
+        generation: nextWorld.generation,
+        reason: result.reason,
+        backend: result.backend
+      });
     });
-
-    if (result.status === "saved") {
-      lastPersistedSignature.current = signature;
-      setPersistence({ status: "saved", savedAt: result.savedAt, generation: nextWorld.generation, bytes: result.bytes, catchUp });
-      return;
-    }
-
-    setAutosaveEnabled(false);
-    setPersistence({ status: "error", generation: nextWorld.generation, reason: result.reason });
   }
 
   function clearSavedRun() {
-    if (!persistenceStorage) {
+    if (!persistenceStore) {
       setAutosaveEnabled(false);
-      setPersistence({ status: "unavailable", reason: "local-storage-unavailable" });
+      setPersistence({ status: "unavailable", reason: "browser-storage-unavailable" });
       return;
     }
 
-    const result = clearPersistedRun(persistenceStorage);
+    const requestId = ++persistenceRequestId.current;
     setAutosaveEnabled(false);
     lastPersistedSignature.current = undefined;
-    setPersistence(
-      result.status === "cleared"
-        ? { status: "cleared" }
-        : { status: "error", generation: world.generation, reason: result.reason }
+    enqueuePersistenceWrite(() => persistenceStore.clear()).then((result) => {
+      if (requestId !== persistenceRequestId.current) return;
+      setPersistence(
+        result.status === "cleared"
+          ? { status: "cleared", backend: result.backend }
+          : { status: "error", generation: world.generation, reason: result.reason, backend: result.backend }
+      );
+    });
+  }
+
+  function enqueuePersistenceWrite<Result>(operation: () => Promise<Result>): Promise<Result> {
+    const write = persistenceWriteChain.current.catch(() => undefined).then(operation);
+    persistenceWriteChain.current = write.then(
+      () => undefined,
+      () => undefined
     );
+    return write;
   }
 
   function saveNow() {
     setAutosaveEnabled(true);
     persistCurrentRun();
+  }
+
+  function applyRunState(next: InitialRunState) {
+    epochRunId.current += 1;
+    setSeed(next.seed);
+    setWorld(next.world);
+    setDetailWorld(next.detailWorld);
+    setSnapshots(next.snapshots);
+    setReplayGeneration(next.replayGeneration);
+    setSelectedId(next.selectedId);
+    setEpoching(false);
+    setAutosaveEnabled(next.autosaveEnabled);
+    setRunning(next.running);
+    setPersistence(next.persistence);
+    lastPersistedSignature.current = next.persistedSignature;
+    persistOnLoad.current = next.persistOnLoad ?? false;
   }
 
   return (
@@ -582,9 +686,10 @@ function PersistenceStatus({
   onClear: () => void;
   onSaveNow: () => void;
 }) {
-  const canClear = !["cleared", "unavailable", "error"].includes(state.status);
+  const canClear = ["fresh", "restored", "saved", "invalid", "unsupported"].includes(state.status);
   const actionLabel = canClear ? "Clear save" : "Save now";
   const action = canClear ? onClear : onSaveNow;
+  const actionDisabled = state.status === "loading";
 
   return (
     <div
@@ -594,6 +699,9 @@ function PersistenceStatus({
       data-autosave={autosaveEnabled ? "enabled" : "paused"}
       data-generation={state.generation ?? ""}
       data-bytes={state.bytes ?? ""}
+      data-manifest-bytes={state.manifestBytes ?? ""}
+      data-backend={state.backend ?? ""}
+      data-storage-health={state.storageHealth ?? ""}
       data-catch-up-generations={state.catchUp?.generations ?? ""}
       data-catch-up-capped={state.catchUp?.capped ? "true" : "false"}
       data-catch-up-elapsed-ms={state.catchUp?.elapsedMs ?? ""}
@@ -603,7 +711,7 @@ function PersistenceStatus({
         <strong>{persistenceStatusLabel(state)}</strong>
         <span>{persistenceStatusDetail(state, autosaveEnabled)}</span>
       </div>
-      <button type="button" onClick={action}>
+      <button type="button" onClick={action} disabled={actionDisabled}>
         {actionLabel}
       </button>
     </div>
@@ -611,6 +719,7 @@ function PersistenceStatus({
 }
 
 function persistenceStatusLabel(state: PersistenceUiState): string {
+  if (state.status === "loading") return "Opening run";
   if (state.status === "restored") return `Restored g${state.generation ?? 0}`;
   if (state.status === "saved") return `Saved g${state.generation ?? 0}`;
   if (state.status === "cleared") return "Save cleared";
@@ -624,11 +733,17 @@ function persistenceStatusLabel(state: PersistenceUiState): string {
 function persistenceStatusDetail(state: PersistenceUiState, autosaveEnabled: boolean): string {
   if (state.catchUp && state.catchUp.generations > 0) {
     const capLabel = state.catchUp.capped ? " capped" : "";
-    return `caught up ${state.catchUp.generations}g${capLabel} after ${formatElapsed(state.catchUp.elapsedMs)} away`;
+    return `${backendLabel(state.backend)} · caught up ${state.catchUp.generations}g${capLabel} after ${formatElapsed(state.catchUp.elapsedMs)} away`;
   }
-  if (state.savedAt) return `${formatSavedAt(state.savedAt)} · ${autosaveEnabled ? "autosave on" : "saving paused"}`;
+  if (state.savedAt) return `${backendLabel(state.backend)} · ${formatSavedAt(state.savedAt)} · ${autosaveEnabled ? "autosave on" : "saving paused"}`;
   if (state.reason) return state.reason;
-  return autosaveEnabled ? "autosave on" : "saving paused";
+  return `${backendLabel(state.backend)} · ${autosaveEnabled ? "autosave on" : "saving paused"}`;
+}
+
+function backendLabel(backend?: BrowserRunStorageBackend): string {
+  if (backend === "indexeddb") return "IndexedDB";
+  if (backend === "local-storage") return "localStorage";
+  return "local";
 }
 
 function formatSavedAt(value: string): string {
