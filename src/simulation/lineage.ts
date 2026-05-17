@@ -50,12 +50,18 @@ export function buildLineageAtlas(world: World, options: { limit?: number } = {}
     .slice(0, limit);
 }
 
+export function selectLineageRepresentative(creatures: Creature[], lineageId: string): Creature | undefined {
+  return creatures
+    .filter((creature) => creature.lineageId === lineageId)
+    .sort((left, right) => representativeScore(right) - representativeScore(left))[0];
+}
+
 function lineageAtlasEntry(lineageId: string, living: Creature[], dead: Creature[]): LineageAtlasEntry {
   const all = [...living, ...dead];
   const fitnessSource = living.length ? living : all;
   const averageFitness = round(fitnessSource.reduce((sum, creature) => sum + creature.fitness, 0) / Math.max(1, fitnessSource.length));
   const bestFitness = round(Math.max(...fitnessSource.map((creature) => creature.fitness)));
-  const representative = [...living].sort((left, right) => right.fitness + right.births * 0.08 - (left.fitness + left.births * 0.08))[0];
+  const representative = selectLineageRepresentative(living, lineageId);
   const average = averageGenome(all);
   const mutationCount = all.reduce((sum, creature) => sum + creature.mutations.length, 0);
   const births = all.reduce((sum, creature) => sum + creature.births, 0);
@@ -82,4 +88,8 @@ function lineageAtlasEntry(lineageId: string, living: Creature[], dead: Creature
     representativeName: representative?.name,
     survivalScore
   };
+}
+
+function representativeScore(creature: Creature): number {
+  return creature.fitness + creature.births * 0.08;
 }

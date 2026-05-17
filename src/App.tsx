@@ -8,6 +8,7 @@ import {
   explainCreaturePressure,
   nearestGenerationSnapshot,
   genomeKeys,
+  selectLineageRepresentative,
   snapshotWorld,
   speciesColor,
   stepWorld,
@@ -305,7 +306,12 @@ export default function App() {
         <aside className="side-panel">
           <MemoCreatureInspector creature={detailSelectedCreature} world={detailSourceWorld} />
           <MemoDynastyPanel creature={detailSelectedCreature} world={detailSourceWorld} index={detailWorldIndex} />
-          <MemoLineageAtlasPanel world={detailSourceWorld} selectedLineageId={detailSelectedCreature?.lineageId} onSelect={setSelectedId} />
+          <MemoLineageAtlasPanel
+            world={detailSourceWorld}
+            selectionWorld={viewWorld}
+            selectedLineageId={detailSelectedCreature?.lineageId}
+            onSelect={setSelectedId}
+          />
           <MemoSpeciesPanel world={detailSourceWorld} />
         </aside>
       </section>
@@ -970,14 +976,20 @@ function SpeciesPanel({ world }: { world: World }) {
 
 function LineageAtlasPanel({
   world,
+  selectionWorld,
   selectedLineageId,
   onSelect
 }: {
   world: World;
+  selectionWorld: World;
   selectedLineageId?: string;
   onSelect: (id: string) => void;
 }) {
   const atlas = useMemo(() => buildLineageAtlas(world, { limit: 8 }), [world]);
+  const selectionCreatureIds = useMemo(
+    () => new Map(atlas.map((lineage) => [lineage.lineageId, selectLineageRepresentative(selectionWorld.creatures, lineage.lineageId)?.id])),
+    [atlas, selectionWorld.creatures]
+  );
 
   return (
     <section className="panel lineage-atlas-panel" data-testid="lineage-atlas-panel" data-generation={world.generation}>
@@ -992,6 +1004,7 @@ function LineageAtlasPanel({
           <LineageAtlasRow
             key={lineage.lineageId}
             lineage={lineage}
+            selectionCreatureId={selectionCreatureIds.get(lineage.lineageId)}
             selected={lineage.lineageId === selectedLineageId}
             onSelect={onSelect}
           />
@@ -1003,14 +1016,16 @@ function LineageAtlasPanel({
 
 function LineageAtlasRow({
   lineage,
+  selectionCreatureId,
   selected,
   onSelect
 }: {
   lineage: LineageAtlasEntry;
+  selectionCreatureId?: string;
   selected: boolean;
   onSelect: (id: string) => void;
 }) {
-  const disabled = !lineage.representativeCreatureId;
+  const disabled = !selectionCreatureId;
 
   return (
     <button
@@ -1022,10 +1037,10 @@ function LineageAtlasRow({
       data-living={lineage.living}
       data-dead={lineage.dead}
       data-survival-score={lineage.survivalScore}
-      data-representative-creature-id={lineage.representativeCreatureId ?? ""}
+      data-representative-creature-id={selectionCreatureId ?? ""}
       onClick={() => {
-        if (lineage.representativeCreatureId) {
-          onSelect(lineage.representativeCreatureId);
+        if (selectionCreatureId) {
+          onSelect(selectionCreatureId);
         }
       }}
     >

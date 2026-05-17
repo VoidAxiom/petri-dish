@@ -2,7 +2,7 @@ export { createWorld, runWorld, stepWorld } from "./world";
 export { createSimulationReport, formatSimulationReport } from "./report";
 export { explainCreaturePressure } from "./pressure";
 export { buildEventImpactReports } from "./impact";
-export { buildLineageAtlas } from "./lineage";
+export { buildLineageAtlas, selectLineageRepresentative } from "./lineage";
 export { speciesColor, genomeKeys } from "./species";
 export {
   buildGenerationSnapshots,
