@@ -27,6 +27,8 @@ describe("simulation reports", () => {
     expect(report.totals.births + report.totals.deaths).toBeGreaterThan(0);
     expect(report.totals.catastrophes).toBeGreaterThan(0);
     expect(report.recentEvents.length).toBeGreaterThan(0);
+    expect(report.eventImpacts.length).toBeGreaterThan(0);
+    expect(report.eventImpacts[0].metrics.some((metric) => metric.delta !== 0)).toBe(true);
     expect(report.topSpecies[0].population).toBeGreaterThan(0);
   });
 
@@ -35,6 +37,7 @@ describe("simulation reports", () => {
 
     expect(output).toContain("Petri Dish simulation report");
     expect(output).toContain("Selection pressure");
+    expect(output).toContain("Aftermath");
     expect(output).toContain("Recent event ledger");
     expect(output).toContain("Signature: pd-");
   });

@@ -1,4 +1,5 @@
 import { genomeKeys } from "./species";
+import { buildEventImpactReports, type EventImpactReport } from "./impact";
 import { createWorld, stepWorld } from "./world";
 import type { Genome, GenerationSummary, SimulationEvent, SimulationEventKind, SpeciesSummary, WorldOptions } from "./types";
 
@@ -41,6 +42,7 @@ export interface SimulationReport {
   };
   topSpecies: Array<Pick<SpeciesSummary, "id" | "population" | "lineageCount" | "dominantBiome" | "births" | "deaths"> & { dominantTrait: keyof Genome }>;
   lineageSurvival: Array<{ lineageId: string; living: number; averageFitness: number }>;
+  eventImpacts: EventImpactReport[];
   catastrophes: SimulationEvent[];
   extinctions: SimulationEvent[];
   recentEvents: SimulationEvent[];
@@ -115,6 +117,7 @@ export function createSimulationReport(options: SimulationReportOptions): Simula
       dominantTrait: dominantGenomeTrait(species.averageGenome)
     })),
     lineageSurvival: topLineages(world.creatures),
+    eventImpacts: buildEventImpactReports(world, { maxReports: 8 }),
     catastrophes: reportEvents.filter((event) => event.kind === "catastrophe"),
     extinctions: reportEvents.filter((event) => event.kind === "extinction"),
     recentEvents: reportEvents.slice(-18)
@@ -156,6 +159,16 @@ export function formatSimulationReport(report: SimulationReport): string {
     ``,
     `Surviving dynasties`,
     ...report.lineageSurvival.slice(0, 5).map((lineage) => `- ${lineage.lineageId}: ${lineage.living} living, avg fitness ${lineage.averageFitness}`),
+    ``,
+    `Aftermath`,
+    ...(report.eventImpacts.length
+      ? report.eventImpacts
+          .slice(0, 5)
+          .map(
+            (impact) =>
+              `- g${impact.generation} ${impact.kind}: ${impact.headline} (${impact.beforeGeneration}->${impact.afterGeneration}, births ${impact.windowBirths}, deaths ${impact.windowDeaths})`
+          )
+      : ["- no major shock windows recorded"]),
     ``,
     `Recent event ledger`,
     ...(report.recentEvents.length ? report.recentEvents.map((event) => `- g${event.generation} ${event.kind}: ${event.message}`) : ["- no recorded events"])

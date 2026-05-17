@@ -1,5 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import {
+  buildEventImpactReports,
   createWorld,
   createGenerationSnapshot,
   defaultSnapshotInterval,
@@ -12,6 +13,7 @@ import {
   upsertGenerationSnapshot,
   type Creature,
   type CreaturePressureReport,
+  type EventImpactReport,
   type GenerationSnapshot,
   type Genome,
   type SimulationEvent,
@@ -293,6 +295,7 @@ export default function App() {
 
           <section className="lower-grid">
             <MemoTimeline world={detailSourceWorld} />
+            <MemoAftermathPanel world={detailSourceWorld} />
             <MemoWorldMemory world={detailSourceWorld} />
           </section>
         </div>
@@ -1024,6 +1027,103 @@ function Timeline({ world }: { world: World }) {
   );
 }
 
+function AftermathPanel({ world }: { world: World }) {
+  const impacts = useMemo(() => buildEventImpactReports(world, { maxReports: 3 }), [world]);
+  const impact = impacts[0];
+
+  if (!impact) {
+    return (
+      <section className="panel aftermath-panel" data-testid="aftermath-panel" data-event-generation="">
+        <div className="panel-heading">
+          <div>
+            <p className="eyebrow">Aftermath</p>
+            <h2>No major shock window yet</h2>
+          </div>
+        </div>
+        <p className="quiet">Catastrophe and extinction impacts will appear after the world accumulates enough history.</p>
+      </section>
+    );
+  }
+
+  const population = impact.metrics.find((metric) => metric.key === "population")!;
+  const food = impact.metrics.find((metric) => metric.key === "food")!;
+  const disease = impact.metrics.find((metric) => metric.key === "disease")!;
+  const predators = impact.metrics.find((metric) => metric.key === "predators")!;
+
+  return (
+    <section
+      className="panel aftermath-panel"
+      data-testid="aftermath-panel"
+      data-event-generation={impact.generation}
+      data-window-start={impact.beforeGeneration}
+      data-window-end={impact.afterGeneration}
+    >
+      <div className="panel-heading">
+        <div>
+          <p className="eyebrow">Aftermath</p>
+          <h2>{impact.kind === "catastrophe" ? impact.eventKind : "extinction cluster"}</h2>
+        </div>
+        <span className={`event-kind event-kind-${impact.kind === "catastrophe" ? "catastrophe" : "extinction"}`}>
+          g{impact.generation}
+        </span>
+      </div>
+
+      <p className="aftermath-headline">{impact.headline}</p>
+      <div className="aftermath-window" data-testid="aftermath-window">
+        g{impact.beforeGeneration}
+        {" -> "}
+        g{impact.afterGeneration}
+        {impact.severity ? ` · severity ${impact.severity}` : ""}
+      </div>
+
+      <div className="aftermath-grid">
+        <AftermathStat label="Population delta" value={signed(population.delta)} testId="aftermath-population-delta" />
+        <AftermathStat label="Deaths" value={impact.windowDeaths} testId="aftermath-deaths" />
+        <AftermathStat label="Extinctions" value={impact.extinctionCount} testId="aftermath-extinctions" />
+      </div>
+
+      <div className="aftermath-pressure" data-testid="aftermath-pressure-delta">
+        <ImpactDelta metric={food} />
+        <ImpactDelta metric={disease} />
+        <ImpactDelta metric={predators} />
+      </div>
+
+      <MiniLedger
+        title="Extinctions in window"
+        empty="no species disappeared in this window"
+        items={impact.extinctions.slice(0, 4).map((speciesId) => ({
+          key: speciesId,
+          label: "lost",
+          text: speciesId
+        }))}
+      />
+    </section>
+  );
+}
+
+function AftermathStat({ label, value, testId }: { label: string; value: string | number; testId: string }) {
+  return (
+    <div className="fact">
+      <span>{label}</span>
+      <strong data-testid={testId}>{value}</strong>
+    </div>
+  );
+}
+
+function ImpactDelta({ metric }: { metric: EventImpactReport["metrics"][number] }) {
+  return (
+    <div className="impact-delta">
+      <span>{metric.label}</span>
+      <strong className={metric.delta >= 0 ? "delta-positive" : "delta-negative"}>{signed(metric.delta)}</strong>
+      <small>
+        {metric.before.toFixed(2)}
+        {" -> "}
+        {metric.after.toFixed(2)}
+      </small>
+    </div>
+  );
+}
+
 function WorldMemory({ world }: { world: World }) {
   const events = world.events.slice(-10).reverse();
 
@@ -1056,6 +1156,7 @@ const MemoCreatureInspector = memo(CreatureInspector);
 const MemoDynastyPanel = memo(DynastyPanel);
 const MemoSpeciesPanel = memo(SpeciesPanel);
 const MemoTimeline = memo(Timeline);
+const MemoAftermathPanel = memo(AftermathPanel);
 const MemoWorldMemory = memo(WorldMemory);
 
 function MiniLedger({
@@ -1195,6 +1296,10 @@ function eventColor(kind: SimulationEvent["kind"]): string {
   if (kind === "extinction") return "#ef4444";
   if (kind === "speciation") return "#22c55e";
   return "#38bdf8";
+}
+
+function signed(value: number): string {
+  return `${value >= 0 ? "+" : ""}${value}`;
 }
 
 function Fact({ label, value }: { label: string; value: string | number }) {
