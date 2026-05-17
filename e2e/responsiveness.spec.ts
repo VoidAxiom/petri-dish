@@ -17,6 +17,12 @@ test("keeps controls responsive while the world is running", async ({ page }, te
     await page.getByRole("button", { name: "Epoch" }).click({ timeout: 3_000 });
     await expect(generationBadge).toHaveText(`Generation ${(index + 1) * 50}`, { timeout: 8_000 });
   }
+  await expect(page.getByTestId("aftermath-panel")).toBeVisible();
+  const liveImpactGeneration = Number(await page.getByTestId("aftermath-panel").getAttribute("data-event-generation"));
+  expect(liveImpactGeneration).toBeGreaterThan(0);
+  expect(liveImpactGeneration).toBeLessThanOrEqual(200);
+  expect(Number(await page.getByTestId("aftermath-deaths").textContent())).toBeGreaterThan(0);
+  expect((await page.getByTestId("aftermath-population-delta").textContent())?.trim()).not.toBe("+0");
 
   await page.getByRole("button", { name: "Run" }).click({ timeout: 2_000 });
   await expect(generationBadge).not.toHaveText("Generation 200", { timeout: 7_000 });
@@ -47,6 +53,11 @@ test("keeps controls responsive while the world is running", async ({ page }, te
   await expect(page.getByTestId("creature-inspector")).toHaveAttribute("data-generation", replayGeneration);
   await expect(page.getByTestId("world-memory")).toHaveAttribute("data-generation", replayGeneration);
   await expect(page.getByTestId("population-timeline")).toHaveAttribute("data-generation-max", replayGeneration);
+  const replayImpactGeneration = Number(await page.getByTestId("aftermath-panel").getAttribute("data-event-generation"));
+  const replayImpactWindowEnd = Number(await page.getByTestId("aftermath-panel").getAttribute("data-window-end"));
+  expect(replayImpactGeneration).toBeGreaterThan(0);
+  expect(replayImpactGeneration).toBeLessThanOrEqual(Number(replayGeneration));
+  expect(replayImpactWindowEnd).toBeLessThanOrEqual(Number(replayGeneration));
 
   await page.getByTestId("replay-live-toggle").click({ timeout: 2_000 });
   await expect(page.getByTestId("snapshot-generation")).toHaveText("Live");

@@ -14,6 +14,7 @@ describe("Petri Dish app", () => {
     expect(screen.getByText("Dynasty")).toBeTruthy();
     expect(screen.getByText("Lineage lens")).toBeTruthy();
     expect(screen.getByText("Species drift")).toBeTruthy();
+    expect(screen.getByText("Aftermath")).toBeTruthy();
     expect(screen.getByText("World memory")).toBeTruthy();
     expect(screen.getByText("Replay lens")).toBeTruthy();
     expect(screen.getByTestId("snapshot-generation").textContent).toBe("Live");

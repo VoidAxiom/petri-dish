@@ -748,7 +748,7 @@ button:disabled {
 
 .lower-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 400px;
+  grid-template-columns: minmax(0, 1fr) 320px 400px;
   gap: 16px;
 }
 
@@ -762,6 +762,60 @@ button:disabled {
     linear-gradient(90deg, rgba(255, 255, 255, 0.06) 1px, transparent 1px),
     rgba(255, 255, 255, 0.035);
   background-size: 100% 25%, 10% 100%;
+}
+
+.aftermath-panel {
+  align-self: stretch;
+}
+
+.aftermath-headline {
+  color: #e2e8f0;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.aftermath-window {
+  margin: 8px 0 10px;
+  color: #94a3b8;
+  font-size: 0.78rem;
+}
+
+.aftermath-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.aftermath-pressure {
+  display: grid;
+  gap: 7px;
+}
+
+.impact-delta {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 56px;
+  gap: 2px 8px;
+  align-items: center;
+  padding-bottom: 7px;
+  border-bottom: 1px solid rgba(230, 237, 243, 0.08);
+}
+
+.impact-delta span {
+  color: #cbd5e1;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.impact-delta strong {
+  justify-self: end;
+  font-size: 0.8rem;
+}
+
+.impact-delta small {
+  grid-column: 1 / -1;
+  color: #94a3b8;
+  font-size: 0.72rem;
 }
 
 .log-row {
@@ -860,6 +914,7 @@ button:disabled {
   .survival-summary,
   .family-thread,
   .genome-compare,
+  .aftermath-grid,
   .pressure-grid,
   .log-row {
     grid-template-columns: 1fr;

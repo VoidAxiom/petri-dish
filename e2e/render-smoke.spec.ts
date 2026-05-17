@@ -15,6 +15,7 @@ test("renders a nonblank living lab and captures a screenshot", async ({ page },
   await expect(page.getByLabel("Hunger pressure")).toBeVisible();
   await expect(page.getByText("Dynasty")).toBeVisible();
   await expect(page.getByText("Lineage lens")).toBeVisible();
+  await expect(page.getByTestId("aftermath-panel")).toBeVisible();
   await expect(page.getByText("World memory")).toBeVisible();
   await expect(page.getByTestId("snapshot-panel")).toBeVisible();
   await expect(page.getByTestId("snapshot-generation")).toHaveText("Live");

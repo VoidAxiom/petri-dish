@@ -1,6 +1,7 @@
 export { createWorld, runWorld, stepWorld } from "./world";
 export { createSimulationReport, formatSimulationReport } from "./report";
 export { explainCreaturePressure } from "./pressure";
+export { buildEventImpactReports } from "./impact";
 export { speciesColor, genomeKeys } from "./species";
 export {
   buildGenerationSnapshots,
@@ -12,5 +13,6 @@ export {
   upsertGenerationSnapshot
 } from "./snapshots";
 export type { CreaturePressureMetric, CreaturePressureReport } from "./pressure";
+export type { EventImpactReport, ImpactMetricDelta } from "./impact";
 export type { GenerationSnapshot } from "./snapshots";
 export type { Creature, GenerationSummary, Genome, SimulationEvent, SpeciesSummary, TerrainCell, World } from "./types";
