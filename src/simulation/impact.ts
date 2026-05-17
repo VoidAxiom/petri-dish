@@ -170,7 +170,7 @@ function metricDeltas(before: GenerationSummary, after: GenerationSummary): Impa
 }
 
 function summaryAtOrBefore(summaries: GenerationSummary[], generation: number): GenerationSummary | undefined {
-  return [...summaries].reverse().find((summary) => summary.generation <= generation) ?? summaries[0];
+  return [...summaries].reverse().find((summary) => summary.generation <= generation);
 }
 
 function summaryAtOrAfter(summaries: GenerationSummary[], generation: number): GenerationSummary | undefined {

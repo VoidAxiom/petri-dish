@@ -49,4 +49,14 @@ describe("event impact reports", () => {
     expect(extinction?.extinctions).toEqual(expectedWindowExtinctions);
     expect(extinction?.metrics.some((metric) => metric.delta !== 0)).toBe(true);
   });
+
+  it("omits impacts whose baseline summary has aged out of retention", () => {
+    const world = runWorld("mythic-lagoon-17", 360, { width: 24, height: 14, initialPopulation: 80 });
+    const firstRetainedGeneration = world.summaries[0].generation;
+    const impacts = buildEventImpactReports(world, { maxReports: 100 });
+
+    expect(firstRetainedGeneration).toBeGreaterThan(90);
+    expect(impacts.every((impact) => impact.beforeGeneration < impact.generation)).toBe(true);
+    expect(impacts.every((impact) => impact.generation > firstRetainedGeneration)).toBe(true);
+  });
 });
