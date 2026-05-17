@@ -21,13 +21,23 @@ test("resumes a saved civilization after reload and supports clearing it", async
   const storedBeforeReload = await page.evaluate((key) => window.localStorage.getItem(key), storageKey);
   expect(storedBeforeReload).toContain('"generation":50');
   expect(JSON.parse(storedBeforeReload ?? "{}").snapshots.length).toBeLessThanOrEqual(2);
+  await page.evaluate((key) => {
+    const payload = JSON.parse(window.localStorage.getItem(key) ?? "{}");
+    payload.savedAt = new Date(Date.now() - 15 * 60_000).toISOString();
+    window.localStorage.setItem(key, JSON.stringify(payload));
+  }, storageKey);
 
   await page.reload();
   await page.getByRole("button", { name: "Pause" }).click({ timeout: 2_000 });
-  await expect(page.getByTestId("persistence-status")).toHaveAttribute("data-status", "restored");
-  await expect(page.getByTestId("persistence-status")).toHaveAttribute("data-generation", String(savedGeneration));
-  await expect(generationBadge).toHaveText(`Generation ${savedGeneration}`);
-  await expect(page.getByTestId("world-map")).toHaveAttribute("data-live-generation", String(savedGeneration));
+  await expect(page.getByTestId("persistence-status")).toHaveAttribute("data-generation", String(savedGeneration + 15));
+  await expect(page.getByTestId("persistence-status")).toHaveAttribute("data-catch-up-generations", "15");
+  await expect(page.getByTestId("persistence-status")).toHaveAttribute("data-status", "saved");
+  await expect(generationBadge).toHaveText(`Generation ${savedGeneration + 15}`);
+  await expect(page.getByTestId("world-map")).toHaveAttribute("data-live-generation", String(savedGeneration + 15));
+  const storedAfterCatchUp = await page.evaluate((key) => JSON.parse(window.localStorage.getItem(key) ?? "{}"), storageKey);
+  expect(storedAfterCatchUp.world.generation).toBe(savedGeneration + 15);
+  expect(storedAfterCatchUp.snapshots.length).toBeLessThanOrEqual(2);
+  expect(JSON.stringify(storedAfterCatchUp).length).toBeLessThan(3_900_000);
 
   await page.getByRole("button", { name: "Clear save" }).click({ timeout: 2_000 });
   await expect(page.getByTestId("persistence-status")).toHaveAttribute("data-status", "cleared");

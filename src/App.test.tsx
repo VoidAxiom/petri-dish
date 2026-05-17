@@ -1,7 +1,15 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 import App from "./App";
-import { buildGenerationSnapshots, defaultPersistedRunKey, loadPersistedRun, runWorld, savePersistedRun } from "./simulation";
+import {
+  buildGenerationSnapshots,
+  defaultPersistedRunKey,
+  loadPersistedRun,
+  maxOfflineCatchUpGenerations,
+  offlineCatchUpMsPerGeneration,
+  runWorld,
+  savePersistedRun
+} from "./simulation";
 
 const persistenceTestConfig = { width: 24, height: 14, initialPopulation: 80 };
 
@@ -68,7 +76,7 @@ describe("Petri Dish app", () => {
       world,
       snapshots,
       selectedCreatureId,
-      savedAt: "2026-05-17T01:00:00.000Z"
+      savedAt: new Date().toISOString()
     });
 
     render(<App />);
@@ -79,6 +87,38 @@ describe("Petri Dish app", () => {
     expect(screen.getByTestId("persistence-status").getAttribute("data-status")).toBe("restored");
     expect(screen.getByTestId("persistence-status").getAttribute("data-generation")).toBe("12");
     expect(screen.getByTestId("creature-inspector").getAttribute("data-creature-id")).toBe(selectedCreatureId);
+  });
+
+  it("catches up a restored local world from elapsed saved time", () => {
+    const world = runWorld("glass-drought-41", 12, persistenceTestConfig);
+    const snapshots = buildGenerationSnapshots("glass-drought-41", 12, persistenceTestConfig, 6);
+    const savedAt = new Date(Date.now() - offlineCatchUpMsPerGeneration * 3).toISOString();
+
+    savePersistedRun(window.localStorage, { world, snapshots, savedAt });
+
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "Pause" }));
+
+    expect(screen.getByTestId("display-generation").textContent).toBe("Generation 15");
+    expect(screen.getByTestId("persistence-status").getAttribute("data-generation")).toBe("15");
+    expect(screen.getByTestId("persistence-status").getAttribute("data-catch-up-generations")).toBe("3");
+    expect(screen.getByText(/caught up 3g/)).toBeTruthy();
+  });
+
+  it("caps restored local world catch-up for long absences", () => {
+    const world = runWorld("glass-drought-41", 12, persistenceTestConfig);
+    const snapshots = buildGenerationSnapshots("glass-drought-41", 12, persistenceTestConfig, 6);
+    const savedAt = new Date(Date.now() - offlineCatchUpMsPerGeneration * (maxOfflineCatchUpGenerations + 20)).toISOString();
+
+    savePersistedRun(window.localStorage, { world, snapshots, savedAt });
+
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "Pause" }));
+
+    expect(screen.getByTestId("display-generation").textContent).toBe(`Generation ${12 + maxOfflineCatchUpGenerations}`);
+    expect(screen.getByTestId("persistence-status").getAttribute("data-catch-up-generations")).toBe(String(maxOfflineCatchUpGenerations));
+    expect(screen.getByTestId("persistence-status").getAttribute("data-catch-up-capped")).toBe("true");
+    expect(screen.getByText(/caught up 60g capped/)).toBeTruthy();
   });
 
   it("keeps corrupt local saves visible until the user clears them", () => {

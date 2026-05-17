@@ -59,3 +59,9 @@ npm run build
 ```
 
 After meaningful UI work, run the app and inspect it in the browser with screenshots when possible.
+
+Browser inspection hygiene:
+
+- Use one active browser verification context per task unless parallel viewports are explicitly needed.
+- Close stale localhost tabs and isolated contexts as soon as their evidence has been collected.
+- Do not leave historical Petri Dish browser windows running after a verification pass.
