@@ -1,12 +1,14 @@
 import { memo, useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import {
   buildEventImpactReports,
+  buildLineageAtlas,
   createWorld,
   createGenerationSnapshot,
   defaultSnapshotInterval,
   explainCreaturePressure,
   nearestGenerationSnapshot,
   genomeKeys,
+  selectLineageRepresentative,
   snapshotWorld,
   speciesColor,
   stepWorld,
@@ -16,6 +18,7 @@ import {
   type EventImpactReport,
   type GenerationSnapshot,
   type Genome,
+  type LineageAtlasEntry,
   type SimulationEvent,
   type TerrainCell,
   type World
@@ -200,7 +203,7 @@ export default function App() {
           <h1>Petri Dish</h1>
         </div>
         <div className="control-row">
-          <select value={seed} onChange={(event) => reset(event.target.value)} aria-label="Seed">
+          <select id="world-seed" name="world-seed" value={seed} onChange={(event) => reset(event.target.value)} aria-label="Seed">
             {demoSeeds.map((item) => (
               <option key={item} value={item}>
                 {item}
@@ -220,7 +223,7 @@ export default function App() {
             Reset
           </button>
           <label className="toggle">
-            <input type="checkbox" checked={debug} onChange={(event) => setDebug(event.target.checked)} />
+            <input name="debug-overlay" type="checkbox" checked={debug} onChange={(event) => setDebug(event.target.checked)} />
             Debug
           </label>
         </div>
@@ -303,6 +306,12 @@ export default function App() {
         <aside className="side-panel">
           <MemoCreatureInspector creature={detailSelectedCreature} world={detailSourceWorld} />
           <MemoDynastyPanel creature={detailSelectedCreature} world={detailSourceWorld} index={detailWorldIndex} />
+          <MemoLineageAtlasPanel
+            world={detailSourceWorld}
+            selectionWorld={viewWorld}
+            selectedLineageId={detailSelectedCreature?.lineageId}
+            onSelect={setSelectedId}
+          />
           <MemoSpeciesPanel world={detailSourceWorld} />
         </aside>
       </section>
@@ -438,6 +447,7 @@ function WorldMap({
       data-terrain-cells={world.cells.length}
       data-creatures-rendered={world.creatures.length}
       data-selected-lineage-count={selectedLineageCount}
+      data-selected-lineage-id={selectedLineageId ?? ""}
       data-map-mode={mode}
       onClick={handleClick}
     />
@@ -623,6 +633,8 @@ function ReplayPanel({
           Previous
         </button>
         <input
+          id="replay-generation"
+          name="replay-generation"
           type="range"
           min={first?.generation ?? 0}
           max={latest?.generation ?? liveWorld.generation}
@@ -777,7 +789,15 @@ function DynastyPanel({ creature, world, index }: { creature?: Creature; world: 
   const speciesTouched = new Set(allLineage.map((candidate) => candidate.speciesId)).size;
 
   return (
-    <section className="panel dynasty-panel" data-testid="dynasty-panel" data-generation={world.generation} data-lineage-id={creature.lineageId}>
+    <section
+      className="panel dynasty-panel"
+      data-testid="dynasty-panel"
+      data-generation={world.generation}
+      data-lineage-id={creature.lineageId}
+      data-living={livingLineage.length}
+      data-dead={archivedLineage.length}
+      data-total-births={totalBirths}
+    >
       <div className="panel-heading">
         <div>
           <p className="eyebrow">Dynasty</p>
@@ -951,6 +971,90 @@ function SpeciesPanel({ world }: { world: World }) {
         ))}
       </div>
     </section>
+  );
+}
+
+function LineageAtlasPanel({
+  world,
+  selectionWorld,
+  selectedLineageId,
+  onSelect
+}: {
+  world: World;
+  selectionWorld: World;
+  selectedLineageId?: string;
+  onSelect: (id: string) => void;
+}) {
+  const atlas = useMemo(() => buildLineageAtlas(world, { limit: 8 }), [world]);
+  const selectionCreatureIds = useMemo(
+    () => new Map(atlas.map((lineage) => [lineage.lineageId, selectLineageRepresentative(selectionWorld.creatures, lineage.lineageId)?.id])),
+    [atlas, selectionWorld.creatures]
+  );
+
+  return (
+    <section className="panel lineage-atlas-panel" data-testid="lineage-atlas-panel" data-generation={world.generation}>
+      <div className="panel-heading">
+        <div>
+          <p className="eyebrow">Lineage atlas</p>
+          <h2>Dominant dynasties</h2>
+        </div>
+      </div>
+      <div className="lineage-atlas-list">
+        {atlas.map((lineage) => (
+          <LineageAtlasRow
+            key={lineage.lineageId}
+            lineage={lineage}
+            selectionCreatureId={selectionCreatureIds.get(lineage.lineageId)}
+            selected={lineage.lineageId === selectedLineageId}
+            onSelect={onSelect}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function LineageAtlasRow({
+  lineage,
+  selectionCreatureId,
+  selected,
+  onSelect
+}: {
+  lineage: LineageAtlasEntry;
+  selectionCreatureId?: string;
+  selected: boolean;
+  onSelect: (id: string) => void;
+}) {
+  const disabled = !selectionCreatureId;
+
+  return (
+    <button
+      type="button"
+      className={`lineage-atlas-row ${selected ? "active" : ""}`}
+      disabled={disabled}
+      data-testid="lineage-atlas-row"
+      data-lineage-id={lineage.lineageId}
+      data-living={lineage.living}
+      data-dead={lineage.dead}
+      data-survival-score={lineage.survivalScore}
+      data-representative-creature-id={selectionCreatureId ?? ""}
+      onClick={() => {
+        if (selectionCreatureId) {
+          onSelect(selectionCreatureId);
+        }
+      }}
+    >
+      <span className="lineage-atlas-top">
+        <strong>{lineage.lineageId}</strong>
+        <b>{lineage.survivalScore.toFixed(1)}</b>
+      </span>
+      <span className="lineage-atlas-meta">
+        {lineage.living} living · {lineage.dead} archived · {lineage.births} births
+      </span>
+      <span className="lineage-atlas-traits">
+        {lineage.speciesCount} species · {lineage.mutationCount} mutations · {lineage.dominantTrait}
+      </span>
+    </button>
   );
 }
 
@@ -1154,6 +1258,7 @@ function WorldMemory({ world }: { world: World }) {
 
 const MemoCreatureInspector = memo(CreatureInspector);
 const MemoDynastyPanel = memo(DynastyPanel);
+const MemoLineageAtlasPanel = memo(LineageAtlasPanel);
 const MemoSpeciesPanel = memo(SpeciesPanel);
 const MemoTimeline = memo(Timeline);
 const MemoAftermathPanel = memo(AftermathPanel);

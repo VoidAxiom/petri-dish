@@ -18,6 +18,17 @@ test("keeps controls responsive while the world is running", async ({ page }, te
     await expect(generationBadge).toHaveText(`Generation ${(index + 1) * 50}`, { timeout: 8_000 });
   }
   await expect(page.getByTestId("aftermath-panel")).toBeVisible();
+  const atlasRows = page.getByTestId("lineage-atlas-row");
+  await expect(atlasRows.first()).toBeVisible();
+  const atlasRowCount = await atlasRows.count();
+  expect(atlasRowCount).toBeGreaterThan(0);
+  expect(atlasRowCount).toBeLessThanOrEqual(8);
+  const firstLiveAtlasRow = page.locator('[data-testid="lineage-atlas-row"]:not([disabled])').first();
+  const atlasLineageId = await firstLiveAtlasRow.getAttribute("data-lineage-id");
+  await firstLiveAtlasRow.click();
+  await expect(page.getByTestId("world-map")).toHaveAttribute("data-selected-lineage-id", atlasLineageId ?? "");
+  await expect(page.getByTestId("creature-inspector")).toHaveAttribute("data-lineage-id", atlasLineageId ?? "");
+  await expect(page.getByTestId("dynasty-panel")).toHaveAttribute("data-lineage-id", atlasLineageId ?? "");
   const liveImpactGeneration = Number(await page.getByTestId("aftermath-panel").getAttribute("data-event-generation"));
   expect(liveImpactGeneration).toBeGreaterThan(0);
   expect(liveImpactGeneration).toBeLessThanOrEqual(200);
@@ -105,7 +116,7 @@ test("keeps controls responsive while the world is running", async ({ page }, te
   expect(renderBudget.renderedCreatures).toBeGreaterThan(100);
   expect(renderBudget.selectedLineageCount).toBeGreaterThan(0);
   expect(renderBudget.svgMapNodes).toBe(0);
-  expect(renderBudget.totalDomNodes).toBeLessThan(850);
+  expect(renderBudget.totalDomNodes).toBeLessThan(900);
 
   const horizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(horizontalOverflow).toBeLessThanOrEqual(2);

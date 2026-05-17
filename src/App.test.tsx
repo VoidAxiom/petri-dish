@@ -14,6 +14,7 @@ describe("Petri Dish app", () => {
     expect(screen.getByText("Dynasty")).toBeTruthy();
     expect(screen.getByText("Lineage lens")).toBeTruthy();
     expect(screen.getByText("Species drift")).toBeTruthy();
+    expect(screen.getByText("Lineage atlas")).toBeTruthy();
     expect(screen.getByText("Aftermath")).toBeTruthy();
     expect(screen.getByText("World memory")).toBeTruthy();
     expect(screen.getByText("Replay lens")).toBeTruthy();
@@ -30,5 +31,20 @@ describe("Petri Dish app", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Step" }));
     expect(screen.getByTestId("display-generation").textContent).toBe("Generation 1");
+  });
+
+  it("selects a lineage atlas representative", () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Pause" }));
+    const row = screen.getAllByTestId("lineage-atlas-row").find((item) => !item.hasAttribute("disabled"))!;
+    const lineageId = row.getAttribute("data-lineage-id");
+    expect(Number(row.getAttribute("data-living"))).toBeGreaterThan(0);
+    expect(Number(row.getAttribute("data-survival-score"))).toBeGreaterThan(0);
+
+    fireEvent.click(row);
+
+    expect(screen.getByTestId("creature-inspector").getAttribute("data-lineage-id")).toBe(lineageId);
+    expect(screen.getByTestId("dynasty-panel").getAttribute("data-lineage-id")).toBe(lineageId);
   });
 });
