@@ -748,8 +748,12 @@ button:disabled {
 
 .lower-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px 400px;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
   gap: 16px;
+}
+
+.lower-grid > .panel:last-child {
+  grid-column: 1 / -1;
 }
 
 .timeline {
@@ -866,6 +870,10 @@ button:disabled {
   .lab-grid,
   .lower-grid {
     grid-template-columns: 1fr;
+  }
+
+  .lower-grid > .panel:last-child {
+    grid-column: auto;
   }
 
   .side-panel {

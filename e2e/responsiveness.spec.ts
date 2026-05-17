@@ -134,3 +134,17 @@ test("fits the mobile viewport without horizontal overflow", async ({ page }) =>
   const domNodes = await page.evaluate(() => document.querySelectorAll("*").length);
   expect(domNodes).toBeLessThan(950);
 });
+
+test("keeps the timeline readable on mid-size desktop viewports", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 920 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Pause" }).click();
+
+  const timelineBox = await page.getByTestId("population-timeline").boundingBox();
+  const aftermathBox = await page.getByTestId("aftermath-panel").boundingBox();
+  expect(timelineBox?.width).toBeGreaterThan(360);
+  expect(aftermathBox?.width).toBeGreaterThan(260);
+
+  const horizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(horizontalOverflow).toBeLessThanOrEqual(2);
+});
