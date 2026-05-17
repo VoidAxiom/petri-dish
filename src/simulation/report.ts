@@ -1,5 +1,6 @@
 import { genomeKeys } from "./species";
 import { buildEventImpactReports, type EventImpactReport } from "./impact";
+import { buildLineageAtlas, type LineageAtlasEntry } from "./lineage";
 import { createWorld, stepWorld } from "./world";
 import type { Genome, GenerationSummary, SimulationEvent, SimulationEventKind, SpeciesSummary, WorldOptions } from "./types";
 
@@ -41,7 +42,9 @@ export interface SimulationReport {
     finalAverageGenome: Genome;
   };
   topSpecies: Array<Pick<SpeciesSummary, "id" | "population" | "lineageCount" | "dominantBiome" | "births" | "deaths"> & { dominantTrait: keyof Genome }>;
-  lineageSurvival: Array<{ lineageId: string; living: number; averageFitness: number }>;
+  lineageSurvival: Array<
+    Pick<LineageAtlasEntry, "lineageId" | "living" | "dead" | "total" | "births" | "averageFitness" | "speciesCount" | "survivalScore">
+  >;
   eventImpacts: EventImpactReport[];
   catastrophes: SimulationEvent[];
   extinctions: SimulationEvent[];
@@ -116,7 +119,16 @@ export function createSimulationReport(options: SimulationReportOptions): Simula
       deaths: species.deaths,
       dominantTrait: dominantGenomeTrait(species.averageGenome)
     })),
-    lineageSurvival: topLineages(world.creatures),
+    lineageSurvival: buildLineageAtlas(world, { limit: 10 }).map((lineage) => ({
+      lineageId: lineage.lineageId,
+      living: lineage.living,
+      dead: lineage.dead,
+      total: lineage.total,
+      births: lineage.births,
+      averageFitness: lineage.averageFitness,
+      speciesCount: lineage.speciesCount,
+      survivalScore: lineage.survivalScore
+    })),
     eventImpacts: buildEventImpactReports(world, { maxReports: 8 }),
     catastrophes: reportEvents.filter((event) => event.kind === "catastrophe"),
     extinctions: reportEvents.filter((event) => event.kind === "extinction"),
@@ -157,8 +169,13 @@ export function formatSimulationReport(report: SimulationReport): string {
     `Dominant species`,
     ...report.topSpecies.slice(0, 5).map((species) => `- ${species.id}: ${species.population} alive, ${species.lineageCount} lineages, ${species.dominantBiome}, trait ${species.dominantTrait}`),
     ``,
-    `Surviving dynasties`,
-    ...report.lineageSurvival.slice(0, 5).map((lineage) => `- ${lineage.lineageId}: ${lineage.living} living, avg fitness ${lineage.averageFitness}`),
+    `Lineage atlas`,
+    ...report.lineageSurvival
+      .slice(0, 5)
+      .map(
+        (lineage) =>
+          `- ${lineage.lineageId}: score ${lineage.survivalScore}, ${lineage.living} living, ${lineage.dead} archived dead, ${lineage.births} births, ${lineage.speciesCount} species, avg fitness ${lineage.averageFitness}`
+      ),
     ``,
     `Aftermath`,
     ...(report.eventImpacts.length
@@ -210,26 +227,6 @@ function curvePoint(summary: GenerationSummary): SimulationReport["populationCur
     deaths: summary.deaths,
     diversity: summary.diversity
   };
-}
-
-function topLineages(creatures: Array<{ lineageId: string; fitness: number }>): SimulationReport["lineageSurvival"] {
-  const groups = new Map<string, { living: number; totalFitness: number }>();
-
-  for (const creature of creatures) {
-    const current = groups.get(creature.lineageId) ?? { living: 0, totalFitness: 0 };
-    current.living += 1;
-    current.totalFitness += creature.fitness;
-    groups.set(creature.lineageId, current);
-  }
-
-  return [...groups.entries()]
-    .map(([lineageId, value]) => ({
-      lineageId,
-      living: value.living,
-      averageFitness: round(value.totalFitness / Math.max(1, value.living))
-    }))
-    .sort((a, b) => b.living - a.living || b.averageFitness - a.averageFitness)
-    .slice(0, 10);
 }
 
 function averageGenomeFromSpecies(species: SpeciesSummary[]): Genome {

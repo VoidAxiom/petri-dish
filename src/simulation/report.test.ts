@@ -30,6 +30,8 @@ describe("simulation reports", () => {
     expect(report.eventImpacts.length).toBeGreaterThan(0);
     expect(report.eventImpacts[0].metrics.some((metric) => metric.delta !== 0)).toBe(true);
     expect(report.topSpecies[0].population).toBeGreaterThan(0);
+    expect(report.lineageSurvival[0].total).toBe(report.lineageSurvival[0].living + report.lineageSurvival[0].dead);
+    expect(report.lineageSurvival[0].survivalScore).toBeGreaterThan(0);
   });
 
   it("formats reports as readable project evidence", () => {
@@ -37,6 +39,7 @@ describe("simulation reports", () => {
 
     expect(output).toContain("Petri Dish simulation report");
     expect(output).toContain("Selection pressure");
+    expect(output).toContain("Lineage atlas");
     expect(output).toContain("Aftermath");
     expect(output).toContain("Recent event ledger");
     expect(output).toContain("Signature: pd-");

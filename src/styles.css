@@ -682,7 +682,8 @@ button:disabled {
 }
 
 .species-list,
-.log-list {
+.log-list,
+.lineage-atlas-list {
   display: grid;
   gap: 8px;
 }
@@ -709,6 +710,53 @@ button:disabled {
   height: 14px;
   border-radius: 50%;
   flex: 0 0 auto;
+}
+
+.lineage-atlas-row {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  gap: 4px;
+  padding: 9px;
+  text-align: left;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.lineage-atlas-row.active {
+  border-color: rgba(253, 230, 138, 0.55);
+  background: rgba(253, 230, 138, 0.08);
+}
+
+.lineage-atlas-top,
+.lineage-atlas-meta,
+.lineage-atlas-traits {
+  display: flex;
+  min-width: 0;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.lineage-atlas-top strong,
+.lineage-atlas-top b {
+  color: #e2e8f0;
+  font-size: 0.82rem;
+}
+
+.lineage-atlas-top strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lineage-atlas-top b {
+  flex: 0 0 auto;
+}
+
+.lineage-atlas-meta,
+.lineage-atlas-traits {
+  color: #94a3b8;
+  font-size: 0.74rem;
 }
 
 .dashboard-grid {
