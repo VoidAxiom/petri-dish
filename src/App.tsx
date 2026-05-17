@@ -2,12 +2,15 @@ import { memo, useEffect, useMemo, useRef, useState, type MutableRefObject } fro
 import {
   buildEventImpactReports,
   buildLineageAtlas,
+  clearPersistedRun,
   createWorld,
   createGenerationSnapshot,
   defaultSnapshotInterval,
   explainCreaturePressure,
+  loadPersistedRun,
   nearestGenerationSnapshot,
   genomeKeys,
+  savePersistedRun,
   selectLineageRepresentative,
   snapshotWorld,
   speciesColor,
@@ -19,6 +22,7 @@ import {
   type GenerationSnapshot,
   type Genome,
   type LineageAtlasEntry,
+  type PersistenceStorage,
   type SimulationEvent,
   type TerrainCell,
   type World
@@ -30,6 +34,8 @@ const simulationTickMs = 420;
 const epochSteps = 50;
 const epochChunkSteps = 5;
 const maxReplaySnapshots = 80;
+const persistenceSaveInterval = 5;
+const maxPersistedReplaySnapshots = 2;
 const biomeColors: Record<TerrainCell["biome"], string> = {
   mire: "#166534",
   steppe: "#5f6f32",
@@ -43,6 +49,24 @@ type MapMode = (typeof mapModes)[number];
 type CanvasSize = { width: number; height: number };
 type CreatureRecord = { creature: Creature; status: "living" | "dead" };
 type TerrainCanvasCache = { key: string; canvas: HTMLCanvasElement };
+type PersistenceUiState = {
+  status: "fresh" | "restored" | "saved" | "cleared" | "unavailable" | "invalid" | "unsupported" | "error";
+  savedAt?: string;
+  generation?: number;
+  bytes?: number;
+  reason?: string;
+};
+type InitialRunState = {
+  seed: string;
+  world: World;
+  detailWorld: World;
+  snapshots: GenerationSnapshot[];
+  selectedId?: string;
+  replayGeneration?: number;
+  persistence: PersistenceUiState;
+  autosaveEnabled: boolean;
+  persistedSignature?: string;
+};
 type WorldIndex = {
   creatureById: Map<string, Creature>;
   graveyardById: Map<string, Creature>;
@@ -51,19 +75,122 @@ type WorldIndex = {
   eventsByLineage: Map<string, SimulationEvent[]>;
 };
 
+function loadInitialRunState(): InitialRunState {
+  const storage = browserPersistenceStorage();
+  if (!storage) {
+    return createFreshInitialRun({ status: "unavailable", reason: "local-storage-unavailable" }, false);
+  }
+
+  const result = loadPersistedRun(storage);
+  if (result.status === "loaded") {
+    const payload = result.payload;
+    const restoredSnapshots = restoreSnapshotsForRun(payload.snapshots, payload.world);
+    const replayGeneration = restoredReplayGeneration(restoredSnapshots, payload.replayGeneration);
+    const selectionSnapshot = replayGeneration === undefined ? undefined : nearestGenerationSnapshot(restoredSnapshots, replayGeneration);
+    const selectedId = restoredSelectedId(selectionSnapshot?.world ?? payload.world, payload.selectedCreatureId);
+
+    return {
+      seed: payload.world.seed,
+      world: payload.world,
+      detailWorld: payload.world,
+      snapshots: restoredSnapshots,
+      selectedId,
+      replayGeneration,
+      persistence: { status: "restored", savedAt: payload.savedAt, generation: payload.world.generation, bytes: result.bytes },
+      autosaveEnabled: true,
+      persistedSignature: persistedRunSignature(payload.world, snapshotsForPersistence(payload.world, restoredSnapshots, replayGeneration), selectedId, replayGeneration)
+    };
+  }
+
+  if (result.status === "missing") {
+    return createFreshInitialRun({ status: "fresh" }, true);
+  }
+
+  if (result.status === "unsupported") {
+    return createFreshInitialRun({ status: "unsupported", reason: result.reason }, false);
+  }
+
+  return createFreshInitialRun({ status: result.status, reason: result.reason }, false);
+}
+
+function createFreshInitialRun(persistence: PersistenceUiState, autosaveEnabled: boolean): InitialRunState {
+  const world = createWorld(demoSeeds[0]);
+  return {
+    seed: world.seed,
+    world,
+    detailWorld: world,
+    snapshots: [createGenerationSnapshot(world)],
+    selectedId: world.creatures[0]?.id,
+    persistence,
+    autosaveEnabled
+  };
+}
+
+function browserPersistenceStorage(): PersistenceStorage | undefined {
+  if (typeof window === "undefined") return undefined;
+  try {
+    return window.localStorage;
+  } catch {
+    return undefined;
+  }
+}
+
+function restoredReplayGeneration(snapshots: GenerationSnapshot[], generation?: number): number | undefined {
+  if (generation === undefined) return undefined;
+  return nearestGenerationSnapshot(snapshots, generation)?.generation;
+}
+
+function restoredSelectedId(world: World, selectedId?: string): string | undefined {
+  if (selectedId && world.creatures.some((creature) => creature.id === selectedId)) {
+    return selectedId;
+  }
+  return world.creatures[0]?.id;
+}
+
+function persistedRunSignature(world: World, snapshots: GenerationSnapshot[], selectedId?: string, replayGeneration?: number): string {
+  const latestSnapshot = snapshots.at(-1);
+  return [world.seed, world.generation, snapshots.length, latestSnapshot?.generation ?? "none", selectedId ?? "none", replayGeneration ?? "live"].join(":");
+}
+
+function snapshotsForPersistence(world: World, snapshots: GenerationSnapshot[], replayGeneration?: number): GenerationSnapshot[] {
+  const retained = new Map<number, GenerationSnapshot>();
+  const replaySnapshot = replayGeneration === undefined ? undefined : nearestGenerationSnapshot(snapshots, replayGeneration);
+  if (replaySnapshot && replaySnapshot.generation !== world.generation) {
+    retained.set(replaySnapshot.generation, replaySnapshot);
+  }
+
+  for (const snapshot of snapshots.filter((item) => item.generation !== world.generation).slice(-maxPersistedReplaySnapshots)) {
+    retained.set(snapshot.generation, snapshot);
+  }
+
+  return [...retained.values()].sort((left, right) => left.generation - right.generation);
+}
+
+function restoreSnapshotsForRun(snapshots: GenerationSnapshot[], world: World): GenerationSnapshot[] {
+  const current = createGenerationSnapshot(world);
+  return [...snapshots.filter((snapshot) => snapshot.generation !== current.generation), current]
+    .sort((left, right) => left.generation - right.generation)
+    .slice(-maxReplaySnapshots);
+}
+
 export default function App() {
-  const [seed, setSeed] = useState(demoSeeds[0]);
-  const [world, setWorld] = useState(() => createWorld(seed));
+  const [initialRun] = useState(loadInitialRunState);
+  const persistenceStorage = useMemo(browserPersistenceStorage, []);
+  const [seed, setSeed] = useState(initialRun.seed);
+  const [world, setWorld] = useState(initialRun.world);
   const [running, setRunning] = useState(true);
-  const [selectedId, setSelectedId] = useState<string | undefined>(world.creatures[0]?.id);
+  const [selectedId, setSelectedId] = useState<string | undefined>(initialRun.selectedId);
   const [debug, setDebug] = useState(false);
   const [mapMode, setMapMode] = useState<MapMode>("terrain");
   const [epoching, setEpoching] = useState(false);
-  const [detailWorld, setDetailWorld] = useState(world);
-  const [snapshots, setSnapshots] = useState<GenerationSnapshot[]>(() => [createGenerationSnapshot(world)]);
-  const [replayGeneration, setReplayGeneration] = useState<number | undefined>();
+  const [detailWorld, setDetailWorld] = useState(initialRun.detailWorld);
+  const [snapshots, setSnapshots] = useState<GenerationSnapshot[]>(initialRun.snapshots);
+  const [replayGeneration, setReplayGeneration] = useState<number | undefined>(initialRun.replayGeneration);
+  const [persistence, setPersistence] = useState<PersistenceUiState>(initialRun.persistence);
+  const [autosaveEnabled, setAutosaveEnabled] = useState(initialRun.autosaveEnabled);
   const lastFrameTick = useRef<number | undefined>(undefined);
   const epochRunId = useRef(0);
+  const lastPersistedSignature = useRef<string | undefined>(initialRun.persistedSignature);
   const replaySnapshot = useMemo(
     () => (replayGeneration === undefined ? undefined : nearestGenerationSnapshot(snapshots, replayGeneration)),
     [replayGeneration, snapshots]
@@ -132,16 +259,26 @@ export default function App() {
     setDetailWorld(world);
   }, [detailWorldIndex, isReplayMode, selectedId, world]);
 
+  useEffect(() => {
+    if (!autosaveEnabled) return;
+    if (world.generation !== 0 && world.generation % persistenceSaveInterval !== 0) return;
+    persistCurrentRun();
+  }, [autosaveEnabled, replayGeneration, selectedId, snapshots, world]);
+
   function reset(nextSeed = seed) {
     epochRunId.current += 1;
     const nextWorld = createWorld(nextSeed);
+    const nextSnapshots = [createGenerationSnapshot(nextWorld)];
+    const nextSelectedId = nextWorld.creatures[0]?.id;
     setSeed(nextSeed);
     setWorld(nextWorld);
     setDetailWorld(nextWorld);
-    setSnapshots([createGenerationSnapshot(nextWorld)]);
+    setSnapshots(nextSnapshots);
     setReplayGeneration(undefined);
-    setSelectedId(nextWorld.creatures[0]?.id);
+    setSelectedId(nextSelectedId);
     setEpoching(false);
+    setAutosaveEnabled(true);
+    persistRun(nextWorld, nextSnapshots, nextSelectedId, undefined);
   }
 
   function advanceStep() {
@@ -195,6 +332,62 @@ export default function App() {
     }
   }
 
+  function persistCurrentRun() {
+    persistRun(world, snapshots, selectedId, replayGeneration);
+  }
+
+  function persistRun(nextWorld: World, nextSnapshots: GenerationSnapshot[], nextSelectedId?: string, nextReplayGeneration?: number) {
+    if (!persistenceStorage) {
+      setAutosaveEnabled(false);
+      setPersistence({ status: "unavailable", reason: "local-storage-unavailable" });
+      return;
+    }
+
+    const persistedSnapshots = snapshotsForPersistence(nextWorld, nextSnapshots, nextReplayGeneration);
+    const signature = persistedRunSignature(nextWorld, persistedSnapshots, nextSelectedId, nextReplayGeneration);
+    if (lastPersistedSignature.current === signature) {
+      return;
+    }
+
+    const result = savePersistedRun(persistenceStorage, {
+      world: nextWorld,
+      snapshots: persistedSnapshots,
+      selectedCreatureId: nextSelectedId,
+      replayGeneration: nextReplayGeneration
+    });
+
+    if (result.status === "saved") {
+      lastPersistedSignature.current = signature;
+      setPersistence({ status: "saved", savedAt: result.savedAt, generation: nextWorld.generation, bytes: result.bytes });
+      return;
+    }
+
+    setAutosaveEnabled(false);
+    setPersistence({ status: "error", generation: nextWorld.generation, reason: result.reason });
+  }
+
+  function clearSavedRun() {
+    if (!persistenceStorage) {
+      setAutosaveEnabled(false);
+      setPersistence({ status: "unavailable", reason: "local-storage-unavailable" });
+      return;
+    }
+
+    const result = clearPersistedRun(persistenceStorage);
+    setAutosaveEnabled(false);
+    lastPersistedSignature.current = undefined;
+    setPersistence(
+      result.status === "cleared"
+        ? { status: "cleared" }
+        : { status: "error", generation: world.generation, reason: result.reason }
+    );
+  }
+
+  function saveNow() {
+    setAutosaveEnabled(true);
+    persistCurrentRun();
+  }
+
   return (
     <main className="app-shell">
       <section className="topbar">
@@ -226,6 +419,7 @@ export default function App() {
             <input name="debug-overlay" type="checkbox" checked={debug} onChange={(event) => setDebug(event.target.checked)} />
             Debug
           </label>
+          <PersistenceStatus state={persistence} autosaveEnabled={autosaveEnabled} onClear={clearSavedRun} onSaveNow={saveNow} />
         </div>
       </section>
 
@@ -352,6 +546,65 @@ function pushMapList<T>(map: Map<string, T[]>, key: string, item: T): void {
   } else {
     map.set(key, [item]);
   }
+}
+
+function PersistenceStatus({
+  state,
+  autosaveEnabled,
+  onClear,
+  onSaveNow
+}: {
+  state: PersistenceUiState;
+  autosaveEnabled: boolean;
+  onClear: () => void;
+  onSaveNow: () => void;
+}) {
+  const canClear = !["cleared", "unavailable", "error"].includes(state.status);
+  const actionLabel = canClear ? "Clear save" : "Save now";
+  const action = canClear ? onClear : onSaveNow;
+
+  return (
+    <div
+      className={`persistence-status persistence-status-${state.status}`}
+      data-testid="persistence-status"
+      data-status={state.status}
+      data-autosave={autosaveEnabled ? "enabled" : "paused"}
+      data-generation={state.generation ?? ""}
+      data-bytes={state.bytes ?? ""}
+    >
+      <div>
+        <p className="eyebrow">Local run</p>
+        <strong>{persistenceStatusLabel(state)}</strong>
+        <span>{persistenceStatusDetail(state, autosaveEnabled)}</span>
+      </div>
+      <button type="button" onClick={action}>
+        {actionLabel}
+      </button>
+    </div>
+  );
+}
+
+function persistenceStatusLabel(state: PersistenceUiState): string {
+  if (state.status === "restored") return `Restored g${state.generation ?? 0}`;
+  if (state.status === "saved") return `Saved g${state.generation ?? 0}`;
+  if (state.status === "cleared") return "Save cleared";
+  if (state.status === "invalid") return "Save invalid";
+  if (state.status === "unsupported") return "Save outdated";
+  if (state.status === "unavailable") return "Storage unavailable";
+  if (state.status === "error") return "Save failed";
+  return "Fresh run";
+}
+
+function persistenceStatusDetail(state: PersistenceUiState, autosaveEnabled: boolean): string {
+  if (state.savedAt) return `${formatSavedAt(state.savedAt)} · ${autosaveEnabled ? "autosave on" : "saving paused"}`;
+  if (state.reason) return state.reason;
+  return autosaveEnabled ? "autosave on" : "saving paused";
+}
+
+function formatSavedAt(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "saved time unknown";
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 function WorldMap({
