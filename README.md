@@ -10,7 +10,8 @@ The project is built as a portfolio-grade simulation package: real state transit
 - Terrain biomes with food, disease, predator pressure, fertility, temperature, and seasonal regeneration.
 - Inspectable creatures with genomes, species, lineages, ancestry, mutations, energy, fitness, and births.
 - Selection pressure through starvation, climate mismatch, disease, predators, crowding, and catastrophe events.
-- Species coloring, population curve, extinction report, world health metrics, and a clickable SVG living map.
+- Species coloring, population curve, extinction report, world health metrics, and a clickable canvas living map.
+- Deterministic generation checkpoints with a replay scrubber for historical inspection without rewinding the live world.
 - Tests proving same-seed replay and real ecological state transitions.
 
 ## Local Development
