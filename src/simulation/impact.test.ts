@@ -29,10 +29,24 @@ describe("event impact reports", () => {
     const world = runWorld("glass-drought-41", 180, { width: 28, height: 16, initialPopulation: 90 });
     const impacts = buildEventImpactReports(world);
     const extinction = impacts.find((impact) => impact.kind === "extinction");
+    const expectedWindowExtinctions = [
+      ...new Set(
+        world.events
+          .filter(
+            (event) =>
+              event.kind === "extinction" &&
+              event.generation > (extinction?.beforeGeneration ?? 0) &&
+              event.generation <= (extinction?.afterGeneration ?? 0)
+          )
+          .map((event) => event.speciesId)
+          .filter((id): id is string => Boolean(id))
+      )
+    ];
 
     expect(extinction).toBeTruthy();
     expect(extinction?.extinctionCount).toBeGreaterThan(0);
     expect(extinction?.extinctions.length).toBe(extinction?.extinctionCount);
+    expect(extinction?.extinctions).toEqual(expectedWindowExtinctions);
     expect(extinction?.metrics.some((metric) => metric.delta !== 0)).toBe(true);
   });
 });

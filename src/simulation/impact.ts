@@ -110,13 +110,14 @@ function impactForExtinctionCluster(
   const after = summaryAtOrAfter(summaries, Math.min(generation + afterWindow, summaries.at(-1)!.generation));
   if (!before || !after) return undefined;
   const window = windowStats(summaries, events, before.generation, after.generation);
-  const extinctions = [...new Set(extinctionEvents.map((event) => event.speciesId).filter((id): id is string => Boolean(id)))];
+  const clusteredExtinctions = [...new Set(extinctionEvents.map((event) => event.speciesId).filter((id): id is string => Boolean(id)))];
+  const extinctions = window.extinctions;
   const metrics = metricDeltas(before, after);
 
   return {
     id: `impact-extinction-${generation}`,
     kind: "extinction",
-    title: `${extinctions.length} species disappeared near generation ${generation}`,
+    title: `${clusteredExtinctions.length} species disappeared near generation ${generation}`,
     generation,
     beforeGeneration: before.generation,
     afterGeneration: after.generation,
