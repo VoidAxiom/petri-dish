@@ -15,6 +15,8 @@ describe("Petri Dish app", () => {
     expect(screen.getByText("Lineage lens")).toBeTruthy();
     expect(screen.getByText("Species drift")).toBeTruthy();
     expect(screen.getByText("World memory")).toBeTruthy();
+    expect(screen.getByText("Replay lens")).toBeTruthy();
+    expect(screen.getByTestId("snapshot-generation").textContent).toBe("Live");
     expect(screen.getByRole("button", { name: "disease" })).toBeTruthy();
     expect(screen.getByRole("img", { name: "Living simulation map" })).toBeTruthy();
   });
@@ -23,9 +25,9 @@ describe("Petri Dish app", () => {
     render(<App />);
 
     fireEvent.click(screen.getByRole("button", { name: "Pause" }));
-    expect(screen.getByText("Generation 0")).toBeTruthy();
+    expect(screen.getByTestId("display-generation").textContent).toBe("Generation 0");
 
     fireEvent.click(screen.getByRole("button", { name: "Step" }));
-    expect(screen.getByText("Generation 1")).toBeTruthy();
+    expect(screen.getByTestId("display-generation").textContent).toBe("Generation 1");
   });
 });

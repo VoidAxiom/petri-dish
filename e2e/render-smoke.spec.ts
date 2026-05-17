@@ -16,6 +16,8 @@ test("renders a nonblank living lab and captures a screenshot", async ({ page },
   await expect(page.getByText("Dynasty")).toBeVisible();
   await expect(page.getByText("Lineage lens")).toBeVisible();
   await expect(page.getByText("World memory")).toBeVisible();
+  await expect(page.getByTestId("snapshot-panel")).toBeVisible();
+  await expect(page.getByTestId("snapshot-generation")).toHaveText("Live");
   await page.getByRole("button", { name: "disease" }).click();
   await expect(page.getByRole("button", { name: "disease" })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByLabel("disease legend")).toBeVisible();
@@ -23,7 +25,7 @@ test("renders a nonblank living lab and captures a screenshot", async ({ page },
   await page.getByRole("button", { name: "Step" }).click();
   await expect(generationBadge).toHaveText("Generation 1");
 
-  const mapStats = await page.locator("canvas.world-map").evaluate((element) => {
+  const mapStats = await page.getByTestId("world-map").evaluate((element) => {
     const canvas = element as HTMLCanvasElement;
     const context = canvas.getContext("2d");
     const image = context?.getImageData(0, 0, canvas.width, canvas.height);
@@ -47,6 +49,7 @@ test("renders a nonblank living lab and captures a screenshot", async ({ page },
       terrainCells: Number(canvas.dataset.terrainCells),
       renderedCreatures: Number(canvas.dataset.creaturesRendered),
       selectedLineageCount: Number(canvas.dataset.selectedLineageCount),
+      replayMode: canvas.dataset.replayMode,
       svgMapNodes: document.querySelectorAll(".world-map rect, .world-map circle").length,
       paintedPixels,
       swatches: swatches.size
@@ -55,6 +58,7 @@ test("renders a nonblank living lab and captures a screenshot", async ({ page },
   expect(mapStats.terrainCells).toBeGreaterThan(1_000);
   expect(mapStats.renderedCreatures).toBeGreaterThan(80);
   expect(mapStats.selectedLineageCount).toBeGreaterThan(0);
+  expect(mapStats.replayMode).toBe("live");
   expect(mapStats.svgMapNodes).toBe(0);
   expect(mapStats.paintedPixels).toBeGreaterThan(600);
   expect(mapStats.swatches).toBeGreaterThan(8);

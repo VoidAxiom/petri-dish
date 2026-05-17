@@ -1,12 +1,18 @@
 import { memo, useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import {
   createWorld,
+  createGenerationSnapshot,
+  defaultSnapshotInterval,
   explainCreaturePressure,
+  nearestGenerationSnapshot,
   genomeKeys,
+  snapshotWorld,
   speciesColor,
   stepWorld,
+  upsertGenerationSnapshot,
   type Creature,
   type CreaturePressureReport,
+  type GenerationSnapshot,
   type Genome,
   type SimulationEvent,
   type TerrainCell,
@@ -17,7 +23,8 @@ const demoSeeds = ["mythic-lagoon-17", "glass-drought-41", "ember-reef-93"];
 const mapModes = ["terrain", "food", "disease", "predators", "temperature"] as const;
 const simulationTickMs = 420;
 const epochSteps = 50;
-const epochChunkSteps = 8;
+const epochChunkSteps = 5;
+const maxReplaySnapshots = 80;
 const biomeColors: Record<TerrainCell["biome"], string> = {
   mire: "#166534",
   steppe: "#5f6f32",
@@ -48,20 +55,30 @@ export default function App() {
   const [mapMode, setMapMode] = useState<MapMode>("terrain");
   const [epoching, setEpoching] = useState(false);
   const [detailWorld, setDetailWorld] = useState(world);
+  const [snapshots, setSnapshots] = useState<GenerationSnapshot[]>(() => [createGenerationSnapshot(world)]);
+  const [replayGeneration, setReplayGeneration] = useState<number | undefined>();
   const lastFrameTick = useRef<number | undefined>(undefined);
   const epochRunId = useRef(0);
-  const worldIndex = useMemo(() => buildWorldIndex(world), [world]);
-  const detailWorldIndex = useMemo(() => buildWorldIndex(detailWorld), [detailWorld]);
+  const replaySnapshot = useMemo(
+    () => (replayGeneration === undefined ? undefined : nearestGenerationSnapshot(snapshots, replayGeneration)),
+    [replayGeneration, snapshots]
+  );
+  const replayWorld = useMemo(() => (replaySnapshot ? snapshotWorld(replaySnapshot) : undefined), [replaySnapshot]);
+  const viewWorld = replayWorld ?? world;
+  const detailSourceWorld = replayWorld ?? detailWorld;
+  const viewWorldIndex = useMemo(() => buildWorldIndex(viewWorld), [viewWorld]);
+  const detailWorldIndex = useMemo(() => buildWorldIndex(detailSourceWorld), [detailSourceWorld]);
+  const isReplayMode = Boolean(replayWorld);
   const selectedCreature = useMemo(
-    () => (selectedId ? worldIndex.creatureById.get(selectedId) : undefined) ?? world.creatures[0],
-    [selectedId, world.creatures, worldIndex]
+    () => (selectedId ? viewWorldIndex.creatureById.get(selectedId) : undefined) ?? viewWorld.creatures[0],
+    [selectedId, viewWorld.creatures, viewWorldIndex]
   );
   const detailSelectedCreature = useMemo(
-    () => (selectedId ? detailWorldIndex.creatureById.get(selectedId) : undefined) ?? detailWorld.creatures[0],
-    [detailWorld.creatures, detailWorldIndex, selectedId]
+    () => (selectedId ? detailWorldIndex.creatureById.get(selectedId) : undefined) ?? detailSourceWorld.creatures[0],
+    [detailSourceWorld.creatures, detailWorldIndex, selectedId]
   );
-  const selectedLineageCount = selectedCreature ? (worldIndex.livingByLineage.get(selectedCreature.lineageId)?.length ?? 0) : 0;
-  const latest = world.summaries.at(-1)!;
+  const selectedLineageCount = selectedCreature ? (viewWorldIndex.livingByLineage.get(selectedCreature.lineageId)?.length ?? 0) : 0;
+  const latest = viewWorld.summaries.at(-1)!;
 
   useEffect(() => {
     if (!running) {
@@ -91,17 +108,24 @@ export default function App() {
   }, [running]);
 
   useEffect(() => {
+    setSnapshots((current) => upsertGenerationSnapshot(current, world, defaultSnapshotInterval, maxReplaySnapshots));
+  }, [world]);
+
+  useEffect(() => {
     if (!running || world.generation % 5 === 0 || world.generation - detailWorld.generation >= 5) {
       setDetailWorld(world);
     }
   }, [detailWorld.generation, running, world]);
 
   useEffect(() => {
+    if (isReplayMode) {
+      return;
+    }
     if (!selectedId || detailWorldIndex.creatureById.has(selectedId)) {
       return;
     }
     setDetailWorld(world);
-  }, [detailWorldIndex, selectedId, world]);
+  }, [detailWorldIndex, isReplayMode, selectedId, world]);
 
   function reset(nextSeed = seed) {
     epochRunId.current += 1;
@@ -109,8 +133,14 @@ export default function App() {
     setSeed(nextSeed);
     setWorld(nextWorld);
     setDetailWorld(nextWorld);
+    setSnapshots([createGenerationSnapshot(nextWorld)]);
+    setReplayGeneration(undefined);
     setSelectedId(nextWorld.creatures[0]?.id);
     setEpoching(false);
+  }
+
+  function advanceStep() {
+    setWorld((current) => stepWorld(current));
   }
 
   function advanceEpoch() {
@@ -143,6 +173,23 @@ export default function App() {
     window.setTimeout(advanceChunk, 0);
   }
 
+  function selectReplaySnapshot(generation: number) {
+    const snapshot = nearestGenerationSnapshot(snapshots, generation);
+    if (snapshot) {
+      setReplayGeneration(snapshot.generation);
+    }
+  }
+
+  function moveReplaySnapshot(offset: number) {
+    const currentIndex = snapshots.findIndex((snapshot) => snapshot.generation === replaySnapshot?.generation);
+    const fallbackIndex = snapshots.length - 1;
+    const nextIndex = Math.max(0, Math.min(snapshots.length - 1, (currentIndex >= 0 ? currentIndex : fallbackIndex) + offset));
+    const snapshot = snapshots[nextIndex];
+    if (snapshot) {
+      setReplayGeneration(snapshot.generation);
+    }
+  }
+
   return (
     <main className="app-shell">
       <section className="topbar">
@@ -161,7 +208,7 @@ export default function App() {
           <button type="button" onClick={() => setRunning((value) => !value)}>
             {running ? "Pause" : "Run"}
           </button>
-          <button type="button" onClick={() => setWorld((current) => stepWorld(current))}>
+          <button type="button" onClick={advanceStep}>
             Step
           </button>
           <button type="button" onClick={advanceEpoch} disabled={epoching}>
@@ -196,7 +243,10 @@ export default function App() {
             <MapLegend mode={mapMode} />
           </div>
           <WorldMap
-            world={world}
+            world={viewWorld}
+            liveGeneration={world.generation}
+            replayGeneration={replaySnapshot?.generation}
+            replayMode={isReplayMode}
             selectedId={selectedCreature?.id}
             selectedLineageId={selectedCreature?.lineageId}
             selectedLineageCount={selectedLineageCount}
@@ -204,10 +254,20 @@ export default function App() {
             mode={mapMode}
             onSelect={setSelectedId}
           />
+          <ReplayPanel
+            snapshots={snapshots}
+            liveWorld={world}
+            replaySnapshot={replaySnapshot}
+            replayMode={isReplayMode}
+            onSelect={selectReplaySnapshot}
+            onPrevious={() => moveReplaySnapshot(-1)}
+            onNext={() => moveReplaySnapshot(1)}
+            onLive={() => setReplayGeneration(undefined)}
+          />
           <div className="event-strip">
             <div>
-              <strong>Generation {world.generation}</strong>
-              <span>{world.currentEvent ? `${world.currentEvent.name} (${world.currentEvent.remaining})` : "No active catastrophe"}</span>
+              <strong data-testid="display-generation">Generation {viewWorld.generation}</strong>
+              <span>{viewWorld.currentEvent ? `${viewWorld.currentEvent.name} (${viewWorld.currentEvent.remaining})` : "No active catastrophe"}</span>
             </div>
             <div>
               <strong>{latest.population}</strong>
@@ -232,15 +292,15 @@ export default function App() {
           </section>
 
           <section className="lower-grid">
-            <MemoTimeline world={detailWorld} />
-            <MemoWorldMemory world={detailWorld} />
+            <MemoTimeline world={detailSourceWorld} />
+            <MemoWorldMemory world={detailSourceWorld} />
           </section>
         </div>
 
         <aside className="side-panel">
-          <MemoCreatureInspector creature={detailSelectedCreature} world={detailWorld} />
-          <MemoDynastyPanel creature={detailSelectedCreature} world={detailWorld} index={detailWorldIndex} />
-          <MemoSpeciesPanel world={detailWorld} />
+          <MemoCreatureInspector creature={detailSelectedCreature} world={detailSourceWorld} />
+          <MemoDynastyPanel creature={detailSelectedCreature} world={detailSourceWorld} index={detailWorldIndex} />
+          <MemoSpeciesPanel world={detailSourceWorld} />
         </aside>
       </section>
     </main>
@@ -284,6 +344,9 @@ function pushMapList<T>(map: Map<string, T[]>, key: string, item: T): void {
 
 function WorldMap({
   world,
+  liveGeneration,
+  replayGeneration,
+  replayMode,
   selectedId,
   selectedLineageId,
   selectedLineageCount,
@@ -292,6 +355,9 @@ function WorldMap({
   onSelect
 }: {
   world: World;
+  liveGeneration: number;
+  replayGeneration?: number;
+  replayMode: boolean;
   selectedId?: string;
   selectedLineageId?: string;
   selectedLineageCount: number;
@@ -361,7 +427,11 @@ function WorldMap({
       className="world-map"
       role="img"
       aria-label="Living simulation map"
+      data-testid="world-map"
       data-generation={world.generation}
+      data-live-generation={liveGeneration}
+      data-replay-generation={replayGeneration ?? ""}
+      data-replay-mode={replayMode ? "snapshot" : "live"}
       data-terrain-cells={world.cells.length}
       data-creatures-rendered={world.creatures.length}
       data-selected-lineage-count={selectedLineageCount}
@@ -488,6 +558,86 @@ function drawCachedTerrainLayer(
   context.drawImage(cache.canvas, 0, 0, canvasSize.width, canvasSize.height);
 }
 
+function ReplayPanel({
+  snapshots,
+  liveWorld,
+  replaySnapshot,
+  replayMode,
+  onSelect,
+  onPrevious,
+  onNext,
+  onLive
+}: {
+  snapshots: GenerationSnapshot[];
+  liveWorld: World;
+  replaySnapshot?: GenerationSnapshot;
+  replayMode: boolean;
+  onSelect: (generation: number) => void;
+  onPrevious: () => void;
+  onNext: () => void;
+  onLive: () => void;
+}) {
+  const first = snapshots[0];
+  const latest = snapshots.at(-1);
+  const selected = replaySnapshot ?? latest;
+  const selectedIndex = snapshots.findIndex((snapshot) => snapshot.generation === selected?.generation);
+  const selectedSummary = selected?.summary ?? liveWorld.summaries.at(-1)!;
+
+  return (
+    <section
+      className={`replay-panel ${replayMode ? "replay-panel-active" : ""}`}
+      data-testid="snapshot-panel"
+      data-replay-mode={replayMode ? "snapshot" : "live"}
+      data-live-generation={liveWorld.generation}
+      data-snapshot-generation={replaySnapshot?.generation ?? ""}
+    >
+      <div className="replay-status">
+        <div>
+          <p className="eyebrow">Replay lens</p>
+          <strong data-testid="snapshot-generation">{replayMode ? `Generation ${selected?.generation ?? liveWorld.generation}` : "Live"}</strong>
+        </div>
+        <div>
+          <span>current run</span>
+          <strong data-testid="live-generation">Generation {liveWorld.generation}</strong>
+        </div>
+        <div>
+          <span>checkpoint</span>
+          <strong>
+            {selectedIndex + 1}/{snapshots.length}
+          </strong>
+        </div>
+        <div>
+          <span>population</span>
+          <strong data-testid="snapshot-population">{selectedSummary.population}</strong>
+        </div>
+      </div>
+
+      <div className="replay-controls">
+        <button type="button" onClick={onLive} disabled={!replayMode} data-testid="replay-live-toggle">
+          Live
+        </button>
+        <button type="button" onClick={onPrevious} disabled={snapshots.length <= 1 || selectedIndex <= 0}>
+          Previous
+        </button>
+        <input
+          type="range"
+          min={first?.generation ?? 0}
+          max={latest?.generation ?? liveWorld.generation}
+          step={defaultSnapshotInterval}
+          value={selected?.generation ?? liveWorld.generation}
+          aria-label="Replay generation"
+          data-testid="snapshot-scrubber"
+          onInput={(event) => onSelect(Number(event.currentTarget.value))}
+          onChange={(event) => onSelect(Number(event.currentTarget.value))}
+        />
+        <button type="button" onClick={onNext} disabled={snapshots.length <= 1 || selectedIndex >= snapshots.length - 1}>
+          Next
+        </button>
+      </div>
+    </section>
+  );
+}
+
 function MapLegend({ mode }: { mode: MapMode }) {
   if (mode === "terrain") {
     return (
@@ -527,7 +677,13 @@ function CreatureInspector({ creature, world }: { creature?: Creature; world: Wo
   const pressure = explainCreaturePressure(creature, cell, world.currentEvent, world.creatures.length);
 
   return (
-    <section className="panel inspector">
+    <section
+      className="panel inspector"
+      data-testid="creature-inspector"
+      data-generation={world.generation}
+      data-creature-id={creature.id}
+      data-lineage-id={creature.lineageId}
+    >
       <div className="panel-heading">
         <div>
           <p className="eyebrow">Selected organism</p>
@@ -618,7 +774,7 @@ function DynastyPanel({ creature, world, index }: { creature?: Creature; world: 
   const speciesTouched = new Set(allLineage.map((candidate) => candidate.speciesId)).size;
 
   return (
-    <section className="panel dynasty-panel">
+    <section className="panel dynasty-panel" data-testid="dynasty-panel" data-generation={world.generation} data-lineage-id={creature.lineageId}>
       <div className="panel-heading">
         <div>
           <p className="eyebrow">Dynasty</p>
@@ -771,7 +927,7 @@ function GenomeBars({ genome }: { genome: Genome }) {
 
 function SpeciesPanel({ world }: { world: World }) {
   return (
-    <section className="panel species-panel">
+    <section className="panel species-panel" data-testid="species-panel" data-generation={world.generation}>
       <div className="panel-heading">
         <div>
           <p className="eyebrow">Clans and species</p>
@@ -822,7 +978,12 @@ function Timeline({ world }: { world: World }) {
     .join(" ");
 
   return (
-    <section className="panel timeline-panel">
+    <section
+      className="panel timeline-panel"
+      data-testid="population-timeline"
+      data-generation-min={firstGeneration}
+      data-generation-max={points.at(-1)?.generation ?? firstGeneration}
+    >
       <div className="panel-heading">
         <div>
           <p className="eyebrow">Population curve</p>
@@ -867,7 +1028,7 @@ function WorldMemory({ world }: { world: World }) {
   const events = world.events.slice(-10).reverse();
 
   return (
-    <section className="panel">
+    <section className="panel" data-testid="world-memory" data-generation={world.generation}>
       <div className="panel-heading">
         <div>
           <p className="eyebrow">Event ledger</p>
