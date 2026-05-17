@@ -1,5 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import {
+  applyOfflineCatchUp,
   buildEventImpactReports,
   buildLineageAtlas,
   clearPersistedRun,
@@ -10,6 +11,7 @@ import {
   loadPersistedRun,
   nearestGenerationSnapshot,
   genomeKeys,
+  planOfflineCatchUp,
   savePersistedRun,
   selectLineageRepresentative,
   snapshotWorld,
@@ -22,6 +24,7 @@ import {
   type GenerationSnapshot,
   type Genome,
   type LineageAtlasEntry,
+  type OfflineCatchUpPlan,
   type PersistenceStorage,
   type SimulationEvent,
   type TerrainCell,
@@ -55,6 +58,7 @@ type PersistenceUiState = {
   generation?: number;
   bytes?: number;
   reason?: string;
+  catchUp?: OfflineCatchUpPlan;
 };
 type InitialRunState = {
   seed: string;
@@ -66,6 +70,7 @@ type InitialRunState = {
   persistence: PersistenceUiState;
   autosaveEnabled: boolean;
   persistedSignature?: string;
+  persistOnLoad?: boolean;
 };
 type WorldIndex = {
   creatureById: Map<string, Creature>;
@@ -84,21 +89,27 @@ function loadInitialRunState(): InitialRunState {
   const result = loadPersistedRun(storage);
   if (result.status === "loaded") {
     const payload = result.payload;
-    const restoredSnapshots = restoreSnapshotsForRun(payload.snapshots, payload.world);
+    const catchUp = planOfflineCatchUp(payload.savedAt);
+    const restoredWorld = applyOfflineCatchUp(payload.world, catchUp);
+    const restoredSnapshots = restoreSnapshotsForRun(payload.snapshots, restoredWorld);
     const replayGeneration = restoredReplayGeneration(restoredSnapshots, payload.replayGeneration);
     const selectionSnapshot = replayGeneration === undefined ? undefined : nearestGenerationSnapshot(restoredSnapshots, replayGeneration);
-    const selectedId = restoredSelectedId(selectionSnapshot?.world ?? payload.world, payload.selectedCreatureId);
+    const selectedId = restoredSelectedId(selectionSnapshot?.world ?? restoredWorld, payload.selectedCreatureId);
 
     return {
-      seed: payload.world.seed,
-      world: payload.world,
-      detailWorld: payload.world,
+      seed: restoredWorld.seed,
+      world: restoredWorld,
+      detailWorld: restoredWorld,
       snapshots: restoredSnapshots,
       selectedId,
       replayGeneration,
-      persistence: { status: "restored", savedAt: payload.savedAt, generation: payload.world.generation, bytes: result.bytes },
+      persistence: { status: "restored", savedAt: payload.savedAt, generation: restoredWorld.generation, bytes: result.bytes, catchUp },
       autosaveEnabled: true,
-      persistedSignature: persistedRunSignature(payload.world, snapshotsForPersistence(payload.world, restoredSnapshots, replayGeneration), selectedId, replayGeneration)
+      persistedSignature:
+        catchUp.generations > 0
+          ? undefined
+          : persistedRunSignature(restoredWorld, snapshotsForPersistence(restoredWorld, restoredSnapshots, replayGeneration), selectedId, replayGeneration),
+      persistOnLoad: catchUp.generations > 0
     };
   }
 
@@ -191,6 +202,7 @@ export default function App() {
   const lastFrameTick = useRef<number | undefined>(undefined);
   const epochRunId = useRef(0);
   const lastPersistedSignature = useRef<string | undefined>(initialRun.persistedSignature);
+  const persistOnLoad = useRef(initialRun.persistOnLoad ?? false);
   const replaySnapshot = useMemo(
     () => (replayGeneration === undefined ? undefined : nearestGenerationSnapshot(snapshots, replayGeneration)),
     [replayGeneration, snapshots]
@@ -261,6 +273,11 @@ export default function App() {
 
   useEffect(() => {
     if (!autosaveEnabled) return;
+    if (persistOnLoad.current) {
+      persistOnLoad.current = false;
+      persistCurrentRun();
+      return;
+    }
     if (world.generation !== 0 && world.generation % persistenceSaveInterval !== 0) return;
     persistCurrentRun();
   }, [autosaveEnabled, replayGeneration, selectedId, snapshots, world]);
@@ -278,7 +295,7 @@ export default function App() {
     setSelectedId(nextSelectedId);
     setEpoching(false);
     setAutosaveEnabled(true);
-    persistRun(nextWorld, nextSnapshots, nextSelectedId, undefined);
+    persistRun(nextWorld, nextSnapshots, nextSelectedId, undefined, undefined);
   }
 
   function advanceStep() {
@@ -333,10 +350,16 @@ export default function App() {
   }
 
   function persistCurrentRun() {
-    persistRun(world, snapshots, selectedId, replayGeneration);
+    persistRun(world, snapshots, selectedId, replayGeneration, persistence.catchUp);
   }
 
-  function persistRun(nextWorld: World, nextSnapshots: GenerationSnapshot[], nextSelectedId?: string, nextReplayGeneration?: number) {
+  function persistRun(
+    nextWorld: World,
+    nextSnapshots: GenerationSnapshot[],
+    nextSelectedId?: string,
+    nextReplayGeneration?: number,
+    catchUp?: OfflineCatchUpPlan
+  ) {
     if (!persistenceStorage) {
       setAutosaveEnabled(false);
       setPersistence({ status: "unavailable", reason: "local-storage-unavailable" });
@@ -358,7 +381,7 @@ export default function App() {
 
     if (result.status === "saved") {
       lastPersistedSignature.current = signature;
-      setPersistence({ status: "saved", savedAt: result.savedAt, generation: nextWorld.generation, bytes: result.bytes });
+      setPersistence({ status: "saved", savedAt: result.savedAt, generation: nextWorld.generation, bytes: result.bytes, catchUp });
       return;
     }
 
@@ -571,6 +594,9 @@ function PersistenceStatus({
       data-autosave={autosaveEnabled ? "enabled" : "paused"}
       data-generation={state.generation ?? ""}
       data-bytes={state.bytes ?? ""}
+      data-catch-up-generations={state.catchUp?.generations ?? ""}
+      data-catch-up-capped={state.catchUp?.capped ? "true" : "false"}
+      data-catch-up-elapsed-ms={state.catchUp?.elapsedMs ?? ""}
     >
       <div>
         <p className="eyebrow">Local run</p>
@@ -596,6 +622,10 @@ function persistenceStatusLabel(state: PersistenceUiState): string {
 }
 
 function persistenceStatusDetail(state: PersistenceUiState, autosaveEnabled: boolean): string {
+  if (state.catchUp && state.catchUp.generations > 0) {
+    const capLabel = state.catchUp.capped ? " capped" : "";
+    return `caught up ${state.catchUp.generations}g${capLabel} after ${formatElapsed(state.catchUp.elapsedMs)} away`;
+  }
   if (state.savedAt) return `${formatSavedAt(state.savedAt)} · ${autosaveEnabled ? "autosave on" : "saving paused"}`;
   if (state.reason) return state.reason;
   return autosaveEnabled ? "autosave on" : "saving paused";
@@ -605,6 +635,14 @@ function formatSavedAt(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "saved time unknown";
   return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function formatElapsed(ms: number): string {
+  const minutes = Math.max(1, Math.floor(ms / 60_000));
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) return `${hours}h`;
+  return `${Math.floor(hours / 24)}d`;
 }
 
 function WorldMap({
