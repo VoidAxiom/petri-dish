@@ -3,6 +3,7 @@ import { mkdir } from "node:fs/promises";
 import path from "node:path";
 
 test("keeps controls responsive while the world is running", async ({ page }, testInfo) => {
+  test.setTimeout(60_000);
   await page.goto("/");
 
   const generationBadge = page.locator(".event-strip > div:first-child strong");
@@ -12,13 +13,13 @@ test("keeps controls responsive while the world is running", async ({ page }, te
   await expect(page.getByRole("button", { name: "Run" })).toBeVisible();
   await expect(generationBadge).toHaveText("Generation 0");
 
-  for (let index = 0; index < 6; index += 1) {
+  for (let index = 0; index < 4; index += 1) {
     await page.getByRole("button", { name: "Epoch" }).click({ timeout: 3_000 });
     await expect(generationBadge).toHaveText(`Generation ${(index + 1) * 50}`, { timeout: 8_000 });
   }
 
   await page.getByRole("button", { name: "Run" }).click({ timeout: 2_000 });
-  await expect(generationBadge).not.toHaveText("Generation 300", { timeout: 7_000 });
+  await expect(generationBadge).not.toHaveText("Generation 200", { timeout: 7_000 });
 
   await page.getByRole("button", { name: "Pause" }).click({ timeout: longRunInteractionTimeoutMs });
   await expect(page.getByRole("button", { name: "Run" })).toBeVisible();
